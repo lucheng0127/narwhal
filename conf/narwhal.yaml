@@ -1,0 +1,13 @@
+mode: server
+debug: false
+server:
+  timeout: 30
+  port: 7023
+  max_conn_num: 64511
+client:
+  server_port: 7023
+  interval: 6
+  remote_port: 8000
+  remote_addr: 192.168.1.10
+  local_port: 80
+  local_addr: 127.0.0.1
