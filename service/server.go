@@ -13,7 +13,7 @@ func RunServer(conf *internal.ServerConf) error {
 	rpcServer := rpc.RPCServer{}
 	var wg sync.WaitGroup
 
-	go rpc.LaunchRPCServer(&rpcServer, conf.ListenPort, wg)
+	go rpc.LaunchRPCServer(&rpcServer, conf.ListenPort, &wg)
 	wg.Add(1)
 	wg.Wait()
 	return nil

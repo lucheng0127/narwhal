@@ -14,7 +14,7 @@ type RPCServer struct {
 	pb.UnimplementedNarwhalServer
 }
 
-func LaunchRPCServer(rServer *RPCServer, port int, wg sync.WaitGroup) {
+func LaunchRPCServer(rServer *RPCServer, port int, wg *sync.WaitGroup) {
 	s := grpc.NewServer()
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
