@@ -19,6 +19,7 @@ type ClientConf struct {
 	RemoteAddr        string `yaml:"remote_addr"`
 	LocalPort         int    `yaml:"local_port"`
 	LocalAddr         string `yaml:"local_addr"`
+	MaxRetryTimes     int    `yaml:"max_retry_times"`
 }
 
 type Config struct {

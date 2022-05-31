@@ -1,4 +1,4 @@
-mode: server
+mode: client
 debug: false
 server:
   timeout: 30
