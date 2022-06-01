@@ -10,6 +10,7 @@ type ServerConf struct {
 	Timeout    int `yaml:"timeout"`
 	ListenPort int `yaml:"port"`
 	MaxConnNum int `yaml:"max_conn_num"`
+	MTU        int `yaml:"mtu"`
 }
 
 type ClientConf struct {
@@ -20,6 +21,7 @@ type ClientConf struct {
 	LocalPort         int    `yaml:"local_port"`
 	LocalAddr         string `yaml:"local_addr"`
 	MaxRetryTimes     int    `yaml:"max_retry_times"`
+	CTXTimeOut        int    `yaml:"context_time_out"`
 }
 
 type Config struct {
