@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	NWHeartbeat byte = 0xa1
-	NWData      byte = 0xa3
-	NWRegistry  byte = 0xa7
-	NWReply     byte = 0xaf
+	NWHeartbeat uint8 = 0xa1
+	NWData      uint8 = 0xa3
+	NWRegistry  uint8 = 0xa7
+	NWReply     uint8 = 0xaf
 
 	NWHeaderLen int = 5
 	NoiseLen    int = 3
@@ -22,7 +22,7 @@ type Callback func(net.Conn, *NWPackage) error
 type HandleMap map[uint8]Callback
 
 type NWHeader struct {
-	Flag   byte
+	Flag   uint8
 	Prefix uint16
 	DLen   uint16
 }
@@ -48,7 +48,13 @@ type NWPackage struct {
 }
 
 func (pkg *NWPackage) SetNoise() {
-	pkg.Noise = make([]byte, NoiseLen)
+	// TODO:(lucheng)Minimum tcp data length 20 bytes
+	minNoiseLen := 20 - NWHeaderLen - int(pkg.DLen)
+	if minNoiseLen > NoiseLen {
+		pkg.Noise = make([]byte, minNoiseLen)
+	} else {
+		pkg.Noise = make([]byte, NoiseLen)
+	}
 	rand.Read(pkg.Noise)
 }
 
@@ -62,12 +68,12 @@ func (pkg *NWPackage) SetPrefix(prefix [2]byte) {
 }
 
 func (pkg *NWPackage) Size() int {
-	return NWHeaderLen + int(pkg.DLen) + NoiseLen
+	return NWHeaderLen + int(pkg.DLen) + len(pkg.Noise)
 }
 
 func (pkg *NWPackage) Marshal() ([]byte, error) {
 	pkg.DLen = uint16(len(pkg.Payload))
-	buf := bytes.NewBuffer(make([]byte, pkg.Size()))
+	buf := bytes.NewBuffer(make([]byte, 0, pkg.Size()))
 	// Write narwhal header into buf
 	err := binary.Write(buf, binary.BigEndian, pkg.NWHeader)
 	if err != nil {
@@ -75,12 +81,6 @@ func (pkg *NWPackage) Marshal() ([]byte, error) {
 	}
 	// Write payload into buf
 	_, err = buf.Write(pkg.Payload)
-	if err != nil {
-		return nil, err
-	}
-	// Add 3 bytes noise
-	pkg.Noise = make([]byte, NoiseLen)
-	_, err = rand.Read(pkg.Noise)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func (pkg *NWPackage) Unmarshal(b []byte) error {
 	buf := bytes.NewBuffer(b)
 
 	// Read data from buf and write it into pkg
-	err := binary.Read(buf, binary.BigEndian, pkg)
+	err := binary.Read(buf, binary.BigEndian, pkg.NWHeader)
 	if err != nil {
 		return err
 	}

@@ -50,6 +50,7 @@ func SendHeartBeat(addr string, port int) error {
 		return err
 	}
 	pkg.SetPayload(payload.Bytes())
+	pkg.SetNoise()
 
 	pkgBytes, err := pkg.Marshal()
 	if err != nil {
