@@ -11,7 +11,7 @@ import (
 )
 
 func HandleHeartBeat(conn net.Conn, pkg *NWPackage) error {
-	fmt.Printf(string(pkg.Payload))
+	// TODO(lucheng): Implement it, mainten target port and connection map
 	return nil
 }
 
@@ -27,8 +27,8 @@ func GetHandles(mode string) HandleMap {
 }
 
 func SendHeartBeat(addr string, port int) error {
-	// TODO(lucheng): Implement it
-	conn, err := net.Dial("tcp", addr)
+	serverAddr := fmt.Sprintf("%s:%d", addr, port)
+	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil {
 		return err
 	}

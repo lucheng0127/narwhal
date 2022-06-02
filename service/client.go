@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"fmt"
 	"narwhal/internal"
 	"narwhal/proto"
 	"time"
@@ -11,12 +10,23 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func RunHeartBeatJob(conf *internal.ClientConf) error {
+type Client struct {
+	ServerPort    int // Port that server listen
+	RemoteAddr    string
+	RemotePort    int // Port that server forward traffic from it to LocalPort
+	LocalAddr     string
+	LocalPort     int
+	Interval      int // HeartBeat send interval
+	MaxRetryTimes int
+	Status        string
+	CTXTimeout    int // Context timeout
+}
+
+func RunHeartBeatJob(client *Client) error {
 	failedTimes := 0
-	ticker := time.NewTicker(time.Duration(conf.HeartBeatInterval * int(time.Second)))
+	ticker := time.NewTicker(time.Duration(client.Interval * int(time.Second)))
 	for range ticker.C {
-		serverAddr := fmt.Sprintf("%s:%d", conf.RemoteAddr, conf.ServerPort)
-		err := proto.SendHeartBeat(serverAddr, conf.LocalPort)
+		err := proto.SendHeartBeat(client.RemoteAddr, client.ServerPort)
 		if err != nil {
 			log.Warnf("Send heartbeat failed %s", err)
 			failedTimes += 1
@@ -25,6 +35,7 @@ func RunHeartBeatJob(conf *internal.ClientConf) error {
 			failedTimes = 0
 		}
 		if failedTimes >= 5 {
+			client.Status = "DEAD"
 			break
 		}
 	}
@@ -33,9 +44,21 @@ func RunHeartBeatJob(conf *internal.ClientConf) error {
 
 func RunClient(conf *internal.ClientConf) error {
 	log.Infof("Launch client with config: %+v", *conf)
+	client := Client{
+		ServerPort:    conf.ServerPort,
+		RemoteAddr:    conf.RemoteAddr,
+		RemotePort:    conf.RemotePort,
+		LocalAddr:     conf.LocalAddr,
+		LocalPort:     conf.LocalPort,
+		Interval:      conf.HeartBeatInterval,
+		MaxRetryTimes: conf.MaxRetryTimes,
+		Status:        "HEALTHY",
+		CTXTimeout:    conf.CTXTimeOut,
+	}
+
 	eGroup := new(errgroup.Group)
 	eGroup.Go(func() error {
-		return RunHeartBeatJob(conf)
+		return RunHeartBeatJob(&client)
 	})
 	if err := eGroup.Wait(); err != nil {
 		return err

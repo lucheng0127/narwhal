@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"fmt"
 	"narwhal/internal"
 	"narwhal/proto"
@@ -14,20 +13,20 @@ import (
 var serverHandles proto.HandleMap
 
 func HandleConn(conn net.Conn, mtu int) {
-	reader := bufio.NewReader(conn)
-	buf := make([]byte, 0, mtu-20)
-	n, err := reader.Read(buf[:])
+	buf := make([]byte, mtu-20)
+	n, err := conn.Read(buf)
 	if err != nil {
 		log.Errorf("Failed to read data from tcp connection %s", err)
 	}
+
 	log.Debugf("Read %d bytes from tcp conn:\nRemote info: %+v Local info: %+v", n, conn.RemoteAddr(), conn.LocalAddr())
-	pkg := proto.NWPackage{}
+	pkg := new(proto.NWPackage)
 	err = pkg.Unmarshal(buf[:n])
 	if err != nil {
 		log.Errorf("Failed to parse narwhal package %s", err)
 		return
 	}
-	err = serverHandles[pkg.Flag](conn, &pkg)
+	err = serverHandles[pkg.Flag](conn, pkg)
 	if err != nil {
 		log.Errorf("Handle pkg %s", err)
 		return
