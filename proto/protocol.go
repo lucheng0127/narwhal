@@ -93,12 +93,14 @@ func (pkg *NWPackage) Marshal() ([]byte, error) {
 
 func (pkg *NWPackage) Unmarshal(b []byte) error {
 	buf := bytes.NewBuffer(b)
+	pkgHeader := new(NWHeader)
 
 	// Read data from buf and write it into pkg
-	err := binary.Read(buf, binary.BigEndian, pkg.NWHeader)
+	err := binary.Read(buf, binary.BigEndian, pkgHeader)
 	if err != nil {
 		return err
 	}
+	pkg.NWHeader = *pkgHeader
 	pkg.Payload = make([]byte, pkg.DLen)
 	// Read data from buf and wrie it into payload
 	_, err = buf.Read(pkg.Payload)

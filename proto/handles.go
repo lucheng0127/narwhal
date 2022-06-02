@@ -12,6 +12,7 @@ import (
 
 func HandleHeartBeat(conn net.Conn, pkg *NWPackage) error {
 	// TODO(lucheng): Implement it, mainten target port and connection map
+	log.Debug("Handle HeartBeat")
 	return nil
 }
 
