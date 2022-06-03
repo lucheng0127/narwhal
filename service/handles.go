@@ -3,6 +3,7 @@ package service
 import (
 	"narwhal/proto"
 	"net"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -82,7 +83,7 @@ func getPktFromConn(conn net.Conn) (*proto.NWPacket, error) {
 	buf := make([]byte, proto.BufSize)
 	_, err := conn.Read(buf)
 	if err != nil {
-		log.Error("Failed to read data from tcp connection %+v", conn)
+		log.Warnf("Failed to read data from tcp connection %+v", conn)
 		return nil, err
 	}
 	pkt, err := proto.Decode(buf)
@@ -91,4 +92,71 @@ func getPktFromConn(conn net.Conn) (*proto.NWPacket, error) {
 		return nil, err
 	}
 	return pkt, nil
+}
+
+func getPayloadFromConn(conn net.Conn) ([]byte, error) {
+	buf := make([]byte, proto.PayloadBufSize)
+	_, err := conn.Read(buf)
+	if err != nil {
+		log.Warnf("Failed to read data from tcp connection %+v", conn)
+		return nil, err
+	}
+	return buf, nil
+}
+
+func forwardTrafficClient() error {
+	// TODO(lucheng): Implement forward traffic for client
+	// call forwardTraffic
+	log.Infof("Enter forward traffic wiating for implement")
+	return nil
+}
+
+func forwardToNW(targetPort int, transferConn, listenConn net.Conn) {
+	// Read raw data from listen conn
+	payload, err := getPayloadFromConn(listenConn)
+	if err != nil {
+		log.Debug(err)
+	}
+
+	// Create narwhal packet and encode
+	pkt, err := proto.CreatePacket(targetPort, proto.FLG_DAT, payload)
+	if err != nil {
+		log.Warn(err)
+	}
+	pktBytes, err := pkt.Encode()
+	if err != nil {
+		log.Warn(err)
+	}
+
+	// Send narwhal packet to transferconn
+	_, err = transferConn.Write(pktBytes)
+	if err != nil {
+		log.Warn(err)
+	}
+}
+
+func forwardToRaw(transferConn, listenConn net.Conn) {
+	// Read narwhal data from transferConn and decode
+	pktBytes, err := getPayloadFromConn(transferConn)
+	if err != nil {
+		log.Warn(err)
+	}
+	pkt, err := proto.Decode(pktBytes)
+	if err != nil {
+		log.Warn(err)
+	}
+
+	// Send payload to listenConn
+	_, err = listenConn.Write(pkt.Payload)
+	if err != nil {
+		log.Warn(err)
+	}
+}
+
+func forwardTraffic(targetPort int, transferConn, listenConn net.Conn) {
+	var wg sync.WaitGroup
+	go forwardToNW(targetPort, transferConn, listenConn)
+	go forwardToRaw(transferConn, listenConn)
+	wg.Add(2)
+	wg.Wait()
 }

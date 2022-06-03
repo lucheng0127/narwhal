@@ -124,20 +124,6 @@ REGRETURN:
 	wg.Wait()
 }
 
-func forwardTraffic(client *clientObj, forwardPort int) error {
-	log.Info("Forward traffic between remote tcp connection and localport")
-	// TODO:(lucheng) Implement it
-
-	// Run goroutine listen remote and  get traffic from remote
-	// send to localChannel, and get traffic from remoteChannel
-	// send to remote
-
-	// Run gorouting list local port and get traffic from local
-	// send to remoteChannel, and get traffice from localChannel
-	// send to local
-	return nil
-}
-
 func RunClient(conf *internal.ClientConf) error {
 	log.Infof("Launch client with config: %+v", *conf)
 	client := new(clientObj)
@@ -162,7 +148,7 @@ REGISGTRY:
 
 	// Try to forward socket traffic
 	errGroup.Go(func() error {
-		err := forwardTraffic(client, conf.LocalPort)
+		err := forwardTrafficClient()
 		if err != nil {
 			return &clientError{msg: err.Error()}
 		}
