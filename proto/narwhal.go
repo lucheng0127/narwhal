@@ -14,6 +14,9 @@ const (
 	FLG_HB  uint8 = 0x42 // Flag heartbeat
 	FLG_DAT uint8 = 0x44 // Flag data
 	FLG_FIN uint8 = 0x48 // Flag teardown client
+	// Option result
+	OPT_OK  uint8 = 0xa0 // Option indecate result correct
+	OPT_ERR uint8 = 0xa1 // Option indecate result error occur
 
 	// Others
 	NWHeaderLen       int = 6

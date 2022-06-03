@@ -18,7 +18,8 @@ type ClientConf struct {
 	LocalPort         int    `yaml:"local_port"`
 	LocalAddr         string `yaml:"local_addr"`
 	MaxRetryTimes     int    `yaml:"max_retry_times"`
-	CTXTimeOut        int    `yaml:"context_time_out"`
+	CTXTimeout        int    `yaml:"context_timeout"`
+	ReplyTimeout      int    `yaml:"reply_timeout"`
 }
 
 type Config struct {

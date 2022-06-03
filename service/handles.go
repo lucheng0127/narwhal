@@ -28,7 +28,7 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	repPkt := new(proto.NWPacket)
 	repPkt.Flag = proto.FLG_REP
 	repPkt.TargetPort = pkt.TargetPort
-	repPkt.Option = uint8(0)
+	repPkt.Option = proto.OPT_OK
 	repPkt.SetPayload([]byte("Registry reply packet"))
 	err := repPkt.SetNoise()
 	if err != nil {
