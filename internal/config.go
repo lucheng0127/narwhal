@@ -7,10 +7,7 @@ import (
 )
 
 type ServerConf struct {
-	Timeout    int `yaml:"timeout"`
 	ListenPort int `yaml:"port"`
-	MaxConnNum int `yaml:"max_conn_num"`
-	MTU        int `yaml:"mtu"`
 }
 
 type ClientConf struct {

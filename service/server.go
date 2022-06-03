@@ -3,63 +3,95 @@ package service
 import (
 	"fmt"
 	"narwhal/internal"
-	"narwhal/proto"
 	"net"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
-var serverHandles proto.HandleMap
+// Registry port connection map
 
-func HandleConn(conn net.Conn, mtu int) {
-	buf := make([]byte, mtu-20)
-	n, err := conn.Read(buf)
-	if err != nil {
-		log.Errorf("Failed to read data from tcp connection %s", err)
-	}
-
-	log.Debugf("Read %d bytes from tcp conn:\nRemote info: %+v Local info: %+v", n, conn.RemoteAddr(), conn.LocalAddr())
-	pkg := new(proto.NWPackage)
-	err = pkg.Unmarshal(buf[:n])
-	if err != nil {
-		log.Errorf("Failed to parse narwhal package %s", err)
-		return
-	}
-	err = serverHandles[pkg.Flag](conn, pkg)
-	if err != nil {
-		log.Errorf("Handle pkg %s", err)
-		return
-	}
+type serverError struct {
+	msg string
 }
 
-func ListenServer(port, mtu int) error {
-	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+type connHandleError struct {
+	serverError
+}
+
+func (err *serverError) Error() string {
+	return fmt.Sprintf("Narwhal server error %s", err.msg)
+}
+
+func (err *connHandleError) Error() string {
+	return fmt.Sprintf("Handle TCP connection error %s", err.msg)
+}
+
+func handleConn(conn net.Conn) error {
+	// Get server handles map
+	handle := handleManager("server")
+
+	errGroup := new(errgroup.Group)
+
+	// Fetch narwhal packet
+	pkt, err := getPktFromConn(conn)
 	if err != nil {
-		log.Panicf("Failed to setup tcp listen server %s", err)
 		return err
 	}
-	// Registry package handles for server
-	serverHandles = proto.GetHandles("server")
-	log.Infof("Start to listen port: %d", port)
+
+	// Handle packet goroutine
+	errGroup.Go(func() error {
+		err := handle[pkt.Flag](conn, pkt)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return nil
+}
+
+func LaunchTCPServer(port int) error {
+	// Listen server
+	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return &serverError{msg: err.Error()}
+	}
+	log.Infof("Launch server on port: %d", port)
+
+	// Run packet handle with goroutine
+	errGroup := new(errgroup.Group)
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			log.Warn("Failed to build connection %s", err)
-			continue
+			log.Errorf("Accept tcp connection error %s", err)
+			return &serverError{msg: err.Error()}
 		}
 
-		go HandleConn(conn, mtu)
+		errGroup.Go(func() error {
+			err = handleConn(conn)
+			if err != nil {
+				return &connHandleError{serverError{msg: err.Error()}}
+			}
+			return nil
+		})
+		if err := errGroup.Wait(); err != nil {
+			return err
+		}
 	}
 }
 
 func RunServer(conf *internal.ServerConf) error {
-	eGroup := new(errgroup.Group)
-
-	eGroup.Go(func() error {
-		return ListenServer(conf.ListenPort, conf.MTU)
+	errGroup := new(errgroup.Group)
+	errGroup.Go(func() error {
+		err := LaunchTCPServer(conf.ListenPort)
+		if err != nil {
+			log.Errorf("Launch tcp server failed %s", err)
+			return err
+		}
+		return nil
 	})
-	if err := eGroup.Wait(); err != nil {
+
+	if err := errGroup.Wait(); err != nil {
 		return err
 	}
 	return nil

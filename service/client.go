@@ -1,66 +1,100 @@
 package service
 
 import (
-	"errors"
+	"fmt"
 	"narwhal/internal"
 	"narwhal/proto"
-	"time"
+	"net"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
-type Client struct {
-	ServerPort    int // Port that server listen
-	RemoteAddr    string
-	RemotePort    int // Port that server forward traffic from it to LocalPort
-	LocalAddr     string
-	LocalPort     int
-	Interval      int // HeartBeat send interval
-	MaxRetryTimes int
-	Status        string
-	CTXTimeout    int // Context timeout
+type clientError struct {
+	msg string
 }
 
-func RunHeartBeatJob(client *Client) error {
-	failedTimes := 0
-	ticker := time.NewTicker(time.Duration(client.Interval * int(time.Second)))
-	for range ticker.C {
-		err := proto.SendHeartBeat(client.RemoteAddr, client.ServerPort)
-		if err != nil {
-			log.Warnf("Send heartbeat failed %s", err)
-			failedTimes += 1
-		} else {
-			log.Debug("Sent heartbeat")
-			failedTimes = 0
-		}
-		if failedTimes >= 5 {
-			client.Status = "DEAD"
-			break
-		}
+func (err *clientError) Error() string {
+	return fmt.Sprintf("Client error %s", err.msg)
+}
+
+func registryClient(conn net.Conn, targetPort, maxRetryTimes, timeout int) error {
+	// Build registry packet
+	pkt := new(proto.NWPacket)
+	pkt.Flag = proto.FLG_REG
+	pkt.TargetPort = uint16(targetPort)
+	pkt.Option = uint8(0)
+	pkt.SetPayload([]byte("Registry client packet"))
+	err := pkt.SetNoise()
+	if err != nil {
+		log.Errorf("Set noise for narwhal packet error $s", err)
+		return err
 	}
-	return errors.New("max retry times for failed to send heartbeat")
+	pktBytes, err := pkt.Encode()
+	if err != nil {
+		log.Error("Failed to encode narwhal packet")
+		return err
+	}
+
+	// TODO(lucheng): run goroutine wiating for reply
+
+	// Keep registy client
+	// Use errRaise determine raise err or nil when goto RETURN
+	errRaised := false
+	failedTimes := 0
+	for {
+		_, err = conn.Write(pktBytes)
+		if err != nil {
+			failedTimes += 1
+			log.Warnf("Failed to registry client %d times", failedTimes)
+			if failedTimes >= maxRetryTimes {
+				errRaised = true
+				// Send registry failed goto return and raise error
+				goto RETURN
+			}
+		}
+		goto RETURN
+	}
+
+RETURN:
+	if errRaised {
+		return fmt.Errorf("failed to registry client to server after %d times retry", maxRetryTimes)
+	}
+	return nil
+}
+
+func forwardTraffic(conn net.Conn, forwardPort int) error {
+	return nil
 }
 
 func RunClient(conf *internal.ClientConf) error {
 	log.Infof("Launch client with config: %+v", *conf)
-	client := Client{
-		ServerPort:    conf.ServerPort,
-		RemoteAddr:    conf.RemoteAddr,
-		RemotePort:    conf.RemotePort,
-		LocalAddr:     conf.LocalAddr,
-		LocalPort:     conf.LocalPort,
-		Interval:      conf.HeartBeatInterval,
-		MaxRetryTimes: conf.MaxRetryTimes,
-		Status:        "HEALTHY",
-		CTXTimeout:    conf.CTXTimeOut,
+	// Dial server
+	serverAddr := fmt.Sprintf("%s:%d", conf.RemoteAddr, conf.ServerPort)
+	conn, err := net.Dial("tcp", serverAddr)
+	if err != nil {
+		return &clientError{msg: err.Error()}
 	}
 
-	eGroup := new(errgroup.Group)
-	eGroup.Go(func() error {
-		return RunHeartBeatJob(&client)
+	// Keep registry client until succeed
+	err = registryClient(conn, conf.LocalPort, conf.MaxRetryTimes, conf.CTXTimeOut)
+	if err != nil {
+		return &clientError{msg: err.Error()}
+	}
+	log.Info("Registry client succeed")
+
+	errGroup := new(errgroup.Group)
+	// Launch a heartbeat job, running in background
+
+	// Try to forward socket traffic
+	errGroup.Go(func() error {
+		err := forwardTraffic(conn, conf.LocalPort)
+		if err != nil {
+			return &clientError{msg: err.Error()}
+		}
+		return nil
 	})
-	if err := eGroup.Wait(); err != nil {
+	if err := errGroup.Wait(); err != nil {
 		return err
 	}
 	return nil
