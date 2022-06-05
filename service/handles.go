@@ -1,29 +1,60 @@
 package service
 
 import (
+	"fmt"
 	"narwhal/proto"
 	"net"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
 type Callback func(conn net.Conn, pkt *proto.NWPacket) error
 
-type connection struct {
-	conn   net.Conn
-	status string
-	// TODO:(lucheng) Add lock
+func listenLocal(port int) error {
+	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return err
+	}
+	serverCm.mux.Lock()
+	serverCm.connMap[int(port)].local = &lister{
+		listen: listen,
+		status: LIS_READY,
+	}
+	serverCm.mux.Unlock()
+	return nil
 }
 
-var connMap = make(map[int]connection)
-
 func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
-	// Registry connection
-	clientConn := new(connection)
-	clientConn.conn = conn
-	clientConn.status = "ESTABLISHED"
-	connMap[int(pkt.TargetPort)] = *clientConn
+	serverCm.mux.Lock()
+	serverCm.connMap[int(pkt.TargetPort)] = new(connPeer)
+	serverCm.connMap[int(pkt.TargetPort)].remote = &connection{
+		conn:   conn,
+		status: CONN_PENDING,
+	}
+	serverCm.mux.Unlock()
+
+	// Launch tcp server on localport
+	var errGroup errgroup.Group
+	errGroup.Go(func() error {
+		err := listenLocal(int(pkt.TargetPort))
+		if err != nil {
+			serverCm.mux.Lock()
+			serverCm.connMap[int(pkt.TargetPort)].remote.status = CONN_UNHEALTH
+			serverCm.mux.Unlock()
+			log.Error(err)
+			return err
+		}
+		serverCm.mux.Lock()
+		serverCm.connMap[int(pkt.TargetPort)].remote.status = CONN_READY
+		serverCm.mux.Unlock()
+		return nil
+	})
+	// Check listenLocal result
+	if err := errGroup.Wait(); err != nil {
+		panic(err)
+	}
 
 	// Build reply packet
 	repPkt := new(proto.NWPacket)
@@ -46,6 +77,7 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 		log.Errorf("Failed to reply client %s", err)
 		return err
 	}
+
 	log.Infof("Registry target port %d succeed", int(pkt.TargetPort))
 	return nil
 }

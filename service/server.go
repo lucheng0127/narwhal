@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Registry port connection map
+var serverCm connManager
 
 type serverError struct {
 	msg string
@@ -81,6 +81,7 @@ func LaunchTCPServer(port int) error {
 }
 
 func RunServer(conf *internal.ServerConf) error {
+	serverCm.connMap = make(map[int]*connPeer)
 	errGroup := new(errgroup.Group)
 	errGroup.Go(func() error {
 		err := LaunchTCPServer(conf.ListenPort)
@@ -90,6 +91,10 @@ func RunServer(conf *internal.ServerConf) error {
 		}
 		return nil
 	})
+
+	// TODO(lucheng): Add func forward traffic between local lister and
+	// remote connections, data from serverCm.connMap, maybe need add a
+	// tigger to active recheck serverCm.connMap
 
 	if err := errGroup.Wait(); err != nil {
 		return err
