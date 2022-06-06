@@ -15,14 +15,6 @@ import (
 
 var clientCm connManager
 
-type clientError struct {
-	msg string
-}
-
-func (err *clientError) Error() string {
-	return fmt.Sprintf("Client error %s", err.msg)
-}
-
 func waitRegistryReply(targetPort, timeout int, wg *sync.WaitGroup) {
 	ctx, cancel := context.WithTimeout(context.Background(),
 		time.Duration(timeout*int(time.Second)))
@@ -138,18 +130,20 @@ REGISGTRY:
 	}
 
 	errGroup := new(errgroup.Group)
-	// Launch a heartbeat job, running in background
+	// TODO(lucheng): Launch a heartbeat job, running in background
 
 	// Try to forward socket traffic
 	errGroup.Go(func() error {
 		err := forwardTrafficClient()
 		if err != nil {
-			return &clientError{msg: err.Error()}
+			return err
 		}
 		return nil
 	})
+
+	// Check errors
 	if err := errGroup.Wait(); err != nil {
-		return err
+		return &clientError{msg: err.Error()}
 	}
 	return nil
 }

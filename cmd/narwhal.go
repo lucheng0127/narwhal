@@ -17,6 +17,7 @@ func checkErr(err error) {
 }
 
 func registrySingal() error {
+	// TODO(lucheng): Handle sigint sigkill sighup sigterm, send FLG_FIN to close tcp connection
 	return nil
 }
 

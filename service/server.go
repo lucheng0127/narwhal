@@ -11,22 +11,6 @@ import (
 
 var serverCm connManager
 
-type serverError struct {
-	msg string
-}
-
-type connHandleError struct {
-	serverError
-}
-
-func (err *serverError) Error() string {
-	return fmt.Sprintf("Narwhal server error %s", err.msg)
-}
-
-func (err *connHandleError) Error() string {
-	return fmt.Sprintf("Handle TCP connection error %s", err.msg)
-}
-
 func handleConn(conn net.Conn) error {
 	// Get server handles map
 	handle := handleManager("server")
@@ -63,14 +47,13 @@ func LaunchTCPServer(port int) error {
 	for {
 		conn, err := listen.Accept()
 		if err != nil {
-			log.Errorf("Accept tcp connection error %s", err)
-			return &serverError{msg: err.Error()}
+			return err
 		}
 
 		errGroup.Go(func() error {
 			err = handleConn(conn)
 			if err != nil {
-				return &connHandleError{serverError{msg: err.Error()}}
+				return err
 			}
 			return nil
 		})
@@ -81,13 +64,13 @@ func LaunchTCPServer(port int) error {
 }
 
 func RunServer(conf *internal.ServerConf) error {
+	log.Infof("Launch server with config: %+v", *conf)
 	serverCm.connMap = make(map[int]*connPeer)
 	errGroup := new(errgroup.Group)
 	errGroup.Go(func() error {
 		err := LaunchTCPServer(conf.ListenPort)
 		if err != nil {
-			log.Errorf("Launch tcp server failed %s", err)
-			return err
+			return &tcpServerError{msg: err.Error()}
 		}
 		return nil
 	})
@@ -95,6 +78,7 @@ func RunServer(conf *internal.ServerConf) error {
 	// TODO(lucheng): Add func forward traffic between local lister and
 	// remote connections, data from serverCm.connMap, maybe need add a
 	// tigger to active recheck serverCm.connMap
+	// Health check set to unhealth close connection
 
 	if err := errGroup.Wait(); err != nil {
 		return err

@@ -43,8 +43,7 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 			serverCm.mux.Lock()
 			serverCm.connMap[int(pkt.TargetPort)].remote.status = CONN_UNHEALTH
 			serverCm.mux.Unlock()
-			log.Error(err)
-			return err
+			return &hRegistryError{msg: err.Error()}
 		}
 		serverCm.mux.Lock()
 		serverCm.connMap[int(pkt.TargetPort)].remote.status = CONN_READY
@@ -53,7 +52,7 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	})
 	// Check listenLocal result
 	if err := errGroup.Wait(); err != nil {
-		panic(err)
+		return err
 	}
 
 	// Build reply packet
@@ -64,18 +63,15 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	repPkt.SetPayload([]byte("Registry reply packet"))
 	err := repPkt.SetNoise()
 	if err != nil {
-		log.Errorf("Set noise for reply packet error %s", err)
-		return err
+		return &hRegistryError{msg: err.Error()}
 	}
 	repPktBytes, err := repPkt.Encode()
 	if err != nil {
-		log.Errorf("Failed to encode reply packet %s", err)
-		return err
+		return &hRegistryError{msg: err.Error()}
 	}
 	_, err = conn.Write(repPktBytes)
 	if err != nil {
-		log.Errorf("Failed to reply client %s", err)
-		return err
+		return &hRegistryError{msg: err.Error()}
 	}
 
 	log.Infof("Registry target port %d succeed", int(pkt.TargetPort))
