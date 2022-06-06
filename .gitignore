@@ -1,2 +1,4 @@
 .vscode
 narwhal
+demo/server/server
+demo/client/client
