@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/binary"
 	"fmt"
 	"narwhal/proto"
 	"net"
@@ -27,9 +28,12 @@ func listenLocal(port int) error {
 }
 
 func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
+	// Parase target port from payload
+	targetPort := int16(binary.BigEndian.Uint16(pkt.Payload))
+
 	serverCm.mux.Lock()
-	serverCm.connMap[int(pkt.TargetPort)] = new(connPeer)
-	serverCm.connMap[int(pkt.TargetPort)].remote = &connection{
+	serverCm.connMap[int(targetPort)] = new(connPeer)
+	serverCm.connMap[int(targetPort)].remote = &connection{
 		conn:   conn,
 		status: CONN_PENDING,
 	}
@@ -38,15 +42,15 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	// Launch tcp server on localport
 	var errGroup errgroup.Group
 	errGroup.Go(func() error {
-		err := listenLocal(int(pkt.TargetPort))
+		err := listenLocal(int(targetPort))
 		if err != nil {
 			serverCm.mux.Lock()
-			serverCm.connMap[int(pkt.TargetPort)].remote.status = CONN_UNHEALTH
+			serverCm.connMap[int(targetPort)].remote.status = CONN_UNHEALTH
 			serverCm.mux.Unlock()
 			return &hRegistryError{msg: err.Error()}
 		}
 		serverCm.mux.Lock()
-		serverCm.connMap[int(pkt.TargetPort)].remote.status = CONN_READY
+		serverCm.connMap[int(targetPort)].remote.status = CONN_READY
 		serverCm.mux.Unlock()
 		return nil
 	})
@@ -58,8 +62,8 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	// Build reply packet
 	repPkt := new(proto.NWPacket)
 	repPkt.Flag = proto.FLG_REP
-	repPkt.TargetPort = pkt.TargetPort
-	repPkt.Option = proto.OPT_OK
+	repPkt.SetUnassignedAddrs()
+	repPkt.Code = proto.C_OK
 	repPkt.SetPayload([]byte("Registry reply packet"))
 	err := repPkt.SetNoise()
 	if err != nil {
@@ -74,7 +78,7 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 		return &hRegistryError{msg: err.Error()}
 	}
 
-	log.Infof("Registry target port %d succeed", int(pkt.TargetPort))
+	log.Infof("Registry target port %d succeed", int(targetPort))
 	return nil
 }
 

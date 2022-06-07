@@ -32,10 +32,7 @@ func waitRegistryReply(targetPort, timeout int, wg *sync.WaitGroup) {
 			if pkt.Flag != proto.FLG_REP {
 				continue
 			}
-			if pkt.TargetPort != uint16(targetPort) {
-				continue
-			}
-			if pkt.Option != proto.OPT_OK {
+			if pkt.Code != proto.C_OK {
 				clientCm.mux.Lock()
 				clientCm.connMap[targetPort].remote.status = CONN_UNHEALTH
 				clientCm.mux.Unlock()
@@ -70,10 +67,13 @@ func registryClient(targetPort, maxRetryTimes, timeout int) {
 	// Build registry packet
 	pkt := new(proto.NWPacket)
 	pkt.Flag = proto.FLG_REG
-	pkt.TargetPort = uint16(targetPort)
-	pkt.Option = uint8(0)
-	pkt.SetPayload([]byte("Registry client packet"))
-	err := pkt.SetNoise()
+	pkt.SetUnassignedAddrs()
+	pkt.Code = proto.C_OK
+	err := pkt.SetTargetPort(int16(targetPort))
+	if err != nil {
+		panic(fmt.Sprintf("Set target port to payload error %s", err))
+	}
+	err = pkt.SetNoise()
 	if err != nil {
 		panic(fmt.Sprintf("Registry client error %s", err))
 	}
