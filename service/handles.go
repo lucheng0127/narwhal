@@ -14,7 +14,6 @@ import (
 type Callback func(conn net.Conn, pkt *proto.NWPacket) error
 
 func listenLocal(port int) error {
-	// TODO(lucheng): fix error
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return err
