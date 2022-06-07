@@ -27,6 +27,9 @@ const (
 	NoiseLen       int = 4    // Minium tcp packet length 20, NWHeaderLen + NoiseLen = 20 it ok send empty packet
 	BufSize        int = 1024 // Default layer3 MTU: 1500, less than 1500-20(IPHeaderlen)-20(TCPHeaderlen) is good
 	PayloadBufSize int = 1004 // Bufsize of narwhal size is 1024, payload max size = 1024 - 16 - 4
+
+	// Net addr
+	UNKNOWN_ADDR string = "Unknown addr" // Unknown address, set addr and port to zero
 )
 
 type NWHeader struct {
@@ -133,18 +136,6 @@ func Decode(b []byte) (*NWPacket, error) {
 	_, err = buf.Read(pkt.Payload)
 	if err != nil {
 		return nil, &ProtoDecodeError{ProtoError{msg: err.Error()}}
-	}
-	return pkt, nil
-}
-
-func CreatePacket(targetPort int, flag uint8, pktBytes []byte) (*NWPacket, error) {
-	pkt := new(NWPacket)
-	pkt.Flag = flag
-	pkt.Code = C_OK
-	pkt.SetPayload(pktBytes)
-	err := pkt.SetNoise()
-	if err != nil {
-		return nil, &ProtoError{msg: err.Error()}
 	}
 	return pkt, nil
 }

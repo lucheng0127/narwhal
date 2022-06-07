@@ -77,11 +77,6 @@ func RunServer(conf *internal.ServerConf) error {
 		return nil
 	})
 
-	// TODO(lucheng): Add func forward traffic between local lister and
-	// remote connections, data from serverCm.connMap, maybe need add a
-	// tigger to active recheck serverCm.connMap
-	// Health check set to unhealth close connection
-
 	if err := errGroup.Wait(); err != nil {
 		return err
 	}
