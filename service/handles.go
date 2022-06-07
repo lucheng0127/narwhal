@@ -14,29 +14,44 @@ import (
 type Callback func(conn net.Conn, pkt *proto.NWPacket) error
 
 func listenLocal(port int) error {
+	// TODO(lucheng): fix error
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return err
 	}
+	// Add lister to lisMap
 	serverCm.mux.Lock()
-	serverCm.connMap[int(port)].local = &lister{
-		listen: listen,
-		status: LIS_READY,
-	}
+	targetPortLister := new(lister)
+	targetPortLister.lister = listen
+	targetPortLister.status = S_READY
+	serverCm.lisMap[port] = targetPortLister
 	serverCm.mux.Unlock()
-	return nil
+
+	for {
+		conn, err := listen.Accept()
+		if err != nil {
+			return err
+		}
+		// Add conn to connMap
+		serverCm.mux.Lock()
+		newConn := new(connection)
+		newConn.conn = conn
+		newConn.status = S_READY
+		serverCm.connMap[conn.RemoteAddr().String()] = newConn
+		serverCm.mux.Unlock()
+	}
 }
 
 func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
-	// Parase target port from payload
+	// Parase target port from payload, and mark transfer connection
 	targetPort := int16(binary.BigEndian.Uint16(pkt.Payload))
-
+	transferKey := fmt.Sprintf("targetPort-%d", int(targetPort))
 	serverCm.mux.Lock()
-	serverCm.connMap[int(targetPort)] = new(connPeer)
-	serverCm.connMap[int(targetPort)].remote = &connection{
-		conn:   conn,
-		status: CONN_PENDING,
-	}
+	transferConn := new(connection)
+	transferConn.conn = conn
+	transferConn.status = S_DUBIOUS
+	serverCm.connMap[transferKey] = transferConn
+	serverCm.transferConnKey = transferKey
 	serverCm.mux.Unlock()
 
 	// Launch tcp server on localport
@@ -44,20 +59,10 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	errGroup.Go(func() error {
 		err := listenLocal(int(targetPort))
 		if err != nil {
-			serverCm.mux.Lock()
-			serverCm.connMap[int(targetPort)].remote.status = CONN_UNHEALTH
-			serverCm.mux.Unlock()
 			return &hRegistryError{msg: err.Error()}
 		}
-		serverCm.mux.Lock()
-		serverCm.connMap[int(targetPort)].remote.status = CONN_READY
-		serverCm.mux.Unlock()
 		return nil
 	})
-	// Check listenLocal result
-	if err := errGroup.Wait(); err != nil {
-		return err
-	}
 
 	// Build reply packet
 	repPkt := new(proto.NWPacket)
@@ -78,7 +83,15 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 		return &hRegistryError{msg: err.Error()}
 	}
 
+	serverCm.mux.Lock()
+	serverCm.connMap[transferKey].status = S_READY
+	serverCm.mux.Unlock()
 	log.Infof("Registry target port %d succeed", int(targetPort))
+
+	// Listen port until error occor
+	if err := errGroup.Wait(); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -6,15 +6,9 @@ import (
 )
 
 const (
-	// Connection status
-	CONN_INIT     uint8 = 0x01
-	CONN_PENDING  uint8 = 0x02
-	CONN_READY    uint8 = 0x04
-	CONN_UNHEALTH uint8 = 0x08
-
-	// Lister status
-	LIS_READY    uint8 = 0xf0
-	LIS_UNHEALTH uint8 = 0xf1
+	S_DUBIOUS uint8 = 0xa0
+	S_READY   uint8 = 0xa1
+	S_CLOSED  uint8 = 0xa2
 )
 
 type connection struct {
@@ -23,16 +17,13 @@ type connection struct {
 }
 
 type lister struct {
-	listen net.Listener
+	lister net.Listener
 	status uint8
 }
 
-type connPeer struct {
-	local  *lister
-	remote *connection
-}
-
 type connManager struct {
-	mux     sync.Mutex
-	connMap map[int]*connPeer
+	mux             sync.Mutex
+	connMap         map[string]*connection // Socket address as key, store net.Conn
+	lisMap          map[int]*lister        // Port as key, store TCP lister
+	transferConnKey string                 // Key of connection, used to forward socket traffic
 }

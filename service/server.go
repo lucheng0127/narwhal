@@ -65,7 +65,9 @@ func LaunchTCPServer(port int) error {
 
 func RunServer(conf *internal.ServerConf) error {
 	log.Infof("Launch server with config: %+v", *conf)
-	serverCm.connMap = make(map[int]*connPeer)
+	serverCm.connMap = make(map[string]*connection)
+	serverCm.lisMap = make(map[int]*lister)
+
 	errGroup := new(errgroup.Group)
 	errGroup.Go(func() error {
 		err := LaunchTCPServer(conf.ListenPort)

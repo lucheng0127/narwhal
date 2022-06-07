@@ -24,7 +24,7 @@ func waitRegistryReply(targetPort, timeout int, wg *sync.WaitGroup) {
 
 	go func() {
 		for {
-			pkt, err := getPktFromConn(clientCm.connMap[targetPort].remote.conn)
+			pkt, err := getPktFromConn(clientCm.connMap[clientCm.transferConnKey].conn)
 			if err != nil {
 				log.Debug("Failed to load narwhal packet from conn")
 				continue
@@ -33,13 +33,11 @@ func waitRegistryReply(targetPort, timeout int, wg *sync.WaitGroup) {
 				continue
 			}
 			if pkt.Code != proto.C_OK {
-				clientCm.mux.Lock()
-				clientCm.connMap[targetPort].remote.status = CONN_UNHEALTH
-				clientCm.mux.Unlock()
+				// Registy failed return
 				break
 			}
 			clientCm.mux.Lock()
-			clientCm.connMap[targetPort].remote.status = CONN_READY
+			clientCm.connMap[clientCm.transferConnKey].status = S_READY
 			clientCm.mux.Unlock()
 			break
 		}
@@ -48,14 +46,11 @@ func waitRegistryReply(targetPort, timeout int, wg *sync.WaitGroup) {
 
 	select {
 	case <-ctx.Done():
-		clientCm.mux.Lock()
-		clientCm.connMap[targetPort].remote.status = CONN_UNHEALTH
-		clientCm.mux.Unlock()
 		log.Warn("Waiting for registry reply timeout")
 		break
 	case <-done:
 		clientCm.mux.Lock()
-		clientCm.connMap[targetPort].remote.status = CONN_READY
+		clientCm.connMap[clientCm.transferConnKey].status = S_READY
 		clientCm.mux.Unlock()
 		log.Info("Registry client succeed")
 		break
@@ -89,7 +84,7 @@ func registryClient(targetPort, maxRetryTimes, timeout int) {
 	// Keep registy client
 	failedTimes := 0
 	for {
-		_, err = clientCm.connMap[targetPort].remote.conn.Write(pktBytes)
+		_, err = clientCm.connMap[clientCm.transferConnKey].conn.Write(pktBytes)
 		if err != nil {
 			failedTimes += 1
 			log.Warnf("Failed to registry client %d times", failedTimes)
@@ -97,9 +92,6 @@ func registryClient(targetPort, maxRetryTimes, timeout int) {
 				panic(fmt.Sprintf("Failed to registry client to server after %d times regtry, exit", failedTimes))
 			}
 		}
-		clientCm.mux.Lock()
-		clientCm.connMap[targetPort].remote.status = CONN_PENDING
-		clientCm.mux.Unlock()
 		goto REGRETURN
 	}
 REGRETURN:
@@ -108,8 +100,8 @@ REGRETURN:
 
 func RunClient(conf *internal.ClientConf) error {
 	log.Infof("Launch client with config: %+v", *conf)
-	clientCm.connMap = make(map[int]*connPeer)
-	clientCm.connMap[conf.LocalPort] = new(connPeer)
+	clientCm.connMap = make(map[string]*connection)
+	clientCm.lisMap = make(map[int]*lister)
 
 	// Dial server
 	serverAddr := fmt.Sprintf("%s:%d", conf.RemoteAddr, conf.ServerPort)
@@ -117,15 +109,16 @@ func RunClient(conf *internal.ClientConf) error {
 	if err != nil {
 		return &clientError{msg: err.Error()}
 	}
-	clientCm.connMap[conf.LocalPort].remote = &connection{
-		conn:   conn,
-		status: CONN_PENDING,
-	}
+	clientCm.transferConnKey = conn.LocalAddr().String()
+	transferConn := new(connection)
+	transferConn.conn = conn
+	transferConn.status = S_DUBIOUS
+	clientCm.connMap[clientCm.transferConnKey] = transferConn
 
 REGISGTRY:
 	// Keep registry client until succeed
 	registryClient(conf.LocalPort, conf.MaxRetryTimes, conf.ReplyTimeout)
-	if clientCm.connMap[conf.LocalPort].remote.status != CONN_READY {
+	if clientCm.connMap[conn.LocalAddr().String()].status != S_READY {
 		goto REGISGTRY
 	}
 
