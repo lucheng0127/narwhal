@@ -36,3 +36,20 @@ type hRegistryError struct {
 func (err *hRegistryError) Error() string {
 	return fmt.Sprintf("Registry client error %s", err.msg)
 }
+
+// Socket error
+type readError struct {
+	msg string
+}
+
+func (err *readError) Error() string {
+	return fmt.Sprintf("Read data from connection error %s", err.msg)
+}
+
+type connNotFound struct {
+	msg string
+}
+
+func (err *connNotFound) Error() string {
+	return fmt.Sprintf("Can't find remote connection for %s", err.msg)
+}

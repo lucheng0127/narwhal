@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"narwhal/proto"
 	"net"
-	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -38,6 +37,15 @@ func listenLocal(port int) error {
 		newConn.status = S_READY
 		serverCm.connMap[conn.RemoteAddr().String()] = newConn
 		serverCm.mux.Unlock()
+
+		// Forward traffic
+		for {
+			err := forwardTraffic(&serverCm, conn)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
 	}
 }
 
@@ -142,8 +150,7 @@ func getPayloadFromConn(conn net.Conn) ([]byte, error) {
 	buf := make([]byte, proto.PayloadBufSize)
 	_, err := conn.Read(buf)
 	if err != nil {
-		log.Warnf("Failed to read data from tcp connection %+v", conn)
-		return nil, err
+		return nil, &readError{msg: err.Error()}
 	}
 	return buf, nil
 }
@@ -151,56 +158,133 @@ func getPayloadFromConn(conn net.Conn) ([]byte, error) {
 func forwardTrafficClient() error {
 	// TODO(lucheng): Implement forward traffic for client
 	// call forwardTraffic
+	pkt, err := getPktFromConn(clientCm.connMap[clientCm.transferConnKey].conn)
+	if err != nil {
+		log.Error(err)
+	}
+	fmt.Printf("%+v", pkt)
 	log.Infof("Enter forward traffic wiating for implement")
 	return nil
 }
 
-func forwardToNW(targetPort int, transferConn, listenConn net.Conn) {
-	// Read raw data from listen conn
-	payload, err := getPayloadFromConn(listenConn)
+func CreatePacket(flag uint8, sAddr, cAddr string, pktBytes []byte) (*proto.NWPacket, error) {
+	pkt := new(proto.NWPacket)
+
+	// Reslove addr
+	sAddrObj, err := net.ResolveTCPAddr("tcp", sAddr)
 	if err != nil {
-		log.Debug(err)
+		log.Warnf("Failed to reslove tcp addr %s, set addr and port to zero", sAddr)
+		pkt.SAddr = proto.UNASSIGNED_ADDR
+		pkt.SPort = proto.UNASSIGNED_PORT
+	} else {
+		// TODO(lucheng): Fix convert net.IP to uint32 not correct
+		pkt.SAddr = uint32(binary.BigEndian.Uint32(sAddrObj.IP))
+		pkt.SPort = uint16(sAddrObj.Port)
+	}
+	cAddrObj, err := net.ResolveTCPAddr("tcp", cAddr)
+	if err != nil {
+		log.Warnf("Failed to reslove tcp addr %s, set addr and port to zero", cAddr)
+		pkt.CAddr = proto.UNASSIGNED_ADDR
+		pkt.CPort = proto.UNASSIGNED_PORT
+	} else {
+		pkt.CAddr = uint32(binary.BigEndian.Uint32(cAddrObj.IP))
+		pkt.CPort = uint16(cAddrObj.Port)
+	}
+
+	// Set flag payload and noise
+	pkt.Flag = flag
+	pkt.Code = proto.C_OK
+	pkt.SetPayload(pktBytes)
+	err = pkt.SetNoise()
+	if err != nil {
+		return nil, err
+	}
+	return pkt, nil
+}
+func forwardToNW(cm *connManager, conn net.Conn) error {
+	// Forward traffic from socket, encode to
+	// narwhal packet send to transfer socket
+
+	// Read raw data from listen conn
+	payload, err := getPayloadFromConn(conn)
+	if err != nil {
+		return err
 	}
 
 	// Create narwhal packet and encode
-	pkt, err := proto.CreatePacket(targetPort, proto.FLG_DAT, payload)
+	pkt, err := CreatePacket(proto.FLG_DAT, conn.RemoteAddr().String(), proto.UNKNOWN_ADDR, payload)
 	if err != nil {
-		log.Warn(err)
+		return err
 	}
 	pktBytes, err := pkt.Encode()
 	if err != nil {
-		log.Warn(err)
+		return err
 	}
 
 	// Send narwhal packet to transferconn
-	_, err = transferConn.Write(pktBytes)
+	_, err = cm.connMap[cm.transferConnKey].conn.Write(pktBytes)
 	if err != nil {
-		log.Warn(err)
+		return err
 	}
+	return nil
 }
 
-func forwardToRaw(transferConn, listenConn net.Conn) {
+func Uint32ToIP(intIP uint32) net.IP {
+	var IPBytes [4]byte
+	IPBytes[0] = byte(intIP & 0xFF)
+	IPBytes[1] = byte((intIP >> 8) & 0xFF)
+	IPBytes[2] = byte((intIP >> 16) & 0xFF)
+	IPBytes[3] = byte((intIP >> 24) & 0xFF)
+	return net.IPv4(IPBytes[3], IPBytes[2], IPBytes[1], IPBytes[0])
+}
+
+func forwardToRaw(cm *connManager) error {
 	// Read narwhal data from transferConn and decode
-	pktBytes, err := getPayloadFromConn(transferConn)
+	pktBytes, err := getPayloadFromConn(cm.connMap[cm.transferConnKey].conn)
 	if err != nil {
-		log.Warn(err)
+		return err
 	}
+
 	pkt, err := proto.Decode(pktBytes)
 	if err != nil {
-		log.Warn(err)
+		return err
 	}
 
-	// Send payload to listenConn
-	_, err = listenConn.Write(pkt.Payload)
-	if err != nil {
-		log.Warn(err)
+	// Parse forwardConn addr from narwhal packet
+	// if key not exist in connMap log it do not forward
+	fAddr := Uint32ToIP(pkt.SAddr).String()
+	fPort := int(pkt.SPort)
+	fConnKey := fmt.Sprintf("%s:%d", fAddr, fPort)
+	fConn, ok := cm.connMap[fConnKey]
+	if !ok {
+		return &connNotFound{msg: fConnKey}
 	}
+
+	_, err = fConn.conn.Write(pkt.Payload)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func forwardTraffic(targetPort int, transferConn, listenConn net.Conn) {
-	var wg sync.WaitGroup
-	go forwardToNW(targetPort, transferConn, listenConn)
-	go forwardToRaw(transferConn, listenConn)
-	wg.Add(2)
-	wg.Wait()
+func forwardTraffic(cm *connManager, conn net.Conn) error {
+	var errGroup errgroup.Group
+	errGroup.Go(func() error {
+		err := forwardToNW(cm, conn)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	errGroup.Go(func() error {
+		err := forwardToRaw(cm)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err := errGroup.Wait(); err != nil {
+		return err
+	}
+	return nil
 }

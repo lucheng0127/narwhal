@@ -12,8 +12,9 @@ const (
 )
 
 type connection struct {
-	conn   net.Conn
-	status uint8
+	conn     net.Conn
+	status   uint8
+	peerAddr string // Use peerAddr format C/SAddr, C/SPort
 }
 
 type lister struct {
