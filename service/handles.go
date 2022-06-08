@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"narwhal/proto"
 	"net"
+	"strconv"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -135,15 +137,39 @@ func handleDataServer(conn net.Conn, pkt *proto.NWPacket) error {
 	return nil
 }
 
-func handleDataClient(conn net.Conn, pkt *proto.NWPacket) error {
+func handleDataClient(transferConn net.Conn, pkt *proto.NWPacket) error {
 	fmt.Printf("Pkt: %+v", pkt)
-	log.Infof("Enter forward traffic wiating for implement")
 	// Get connMap key, from SAddr and SPort
+	sAddr := Uint32ToIP(pkt.SAddr)
+	connKey := fmt.Sprintf("%s:%d", sAddr.String(), int(pkt.SPort))
 
 	// If conn not exist, try to connect to local port,
 	// add conn to connMap, set connection.peerAddr
+	_, ok := clientCm.connMap[connKey]
+	if !ok {
+		localPortString := strings.Split(clientCm.transferConnKey, "-")
+		localPort, err := strconv.Atoi(localPortString[1])
+		if err != nil {
+			return err
+		}
+		newConn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
+		if err != nil {
+			panic(err)
+		}
+		conn := new(connection)
+		conn.conn = newConn
+		conn.status = S_READY
+		conn.peerAddr = connKey
+		clientCm.connMap[connKey] = conn
+
+		// TODO(lucheng): Start a new goroutine read data from conn send back to transferConn
+	}
 
 	// Forward traffic between local socket and transfer socket
+	_, err := clientCm.connMap[connKey].conn.Write(pkt.Payload)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -190,6 +216,15 @@ func handlePkt(conn net.Conn, mod string) error {
 }
 
 // Utils functions for connection and packets
+
+func Uint32ToIP(intIP uint32) net.IP {
+	var IPBytes [4]byte
+	IPBytes[0] = byte(intIP & 0xFF)
+	IPBytes[1] = byte((intIP >> 8) & 0xFF)
+	IPBytes[2] = byte((intIP >> 16) & 0xFF)
+	IPBytes[3] = byte((intIP >> 24) & 0xFF)
+	return net.IPv4(IPBytes[3], IPBytes[2], IPBytes[1], IPBytes[0])
+}
 
 func getPktFromConn(conn net.Conn) (*proto.NWPacket, error) {
 	buf := make([]byte, proto.BufSize)
@@ -280,44 +315,6 @@ func forwardToNW(cm *connManager, conn net.Conn) error {
 
 	// Send narwhal packet to transferconn
 	_, err = cm.connMap[cm.transferConnKey].conn.Write(pktBytes)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func Uint32ToIP(intIP uint32) net.IP {
-	var IPBytes [4]byte
-	IPBytes[0] = byte(intIP & 0xFF)
-	IPBytes[1] = byte((intIP >> 8) & 0xFF)
-	IPBytes[2] = byte((intIP >> 16) & 0xFF)
-	IPBytes[3] = byte((intIP >> 24) & 0xFF)
-	return net.IPv4(IPBytes[3], IPBytes[2], IPBytes[1], IPBytes[0])
-}
-
-func forwardToRaw(cm *connManager) error {
-	// Read narwhal data from transferConn and decode
-	pktBytes, err := getPayloadFromConn(cm.connMap[cm.transferConnKey].conn)
-	if err != nil {
-		return err
-	}
-
-	pkt, err := proto.Decode(pktBytes)
-	if err != nil {
-		return err
-	}
-
-	// Parse forwardConn addr from narwhal packet
-	// if key not exist in connMap log it do not forward
-	fAddr := Uint32ToIP(pkt.SAddr).String()
-	fPort := int(pkt.SPort)
-	fConnKey := fmt.Sprintf("%s:%d", fAddr, fPort)
-	fConn, ok := cm.connMap[fConnKey]
-	if !ok {
-		return &connNotFound{msg: fConnKey}
-	}
-
-	_, err = fConn.conn.Write(pkt.Payload)
 	if err != nil {
 		return err
 	}

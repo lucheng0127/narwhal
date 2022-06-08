@@ -75,7 +75,7 @@ func RunClient(conf *internal.ClientConf) error {
 	if err != nil {
 		return &clientError{msg: err.Error()}
 	}
-	clientCm.transferConnKey = conn.LocalAddr().String()
+	clientCm.transferConnKey = fmt.Sprintf("forwardPort-%d", conf.LocalPort)
 	transferConn := new(connection)
 	transferConn.conn = conn
 	transferConn.status = S_DUBIOUS
@@ -94,7 +94,7 @@ func RunClient(conf *internal.ClientConf) error {
 
 REGISGTRY:
 	// Keep registry client until succeed
-	registryClient(conf.LocalPort, conf.MaxRetryTimes, conf.ReplyTimeout)
+	registryClient(conf.RemotePort, conf.MaxRetryTimes, conf.ReplyTimeout)
 	if clientCm.connMap[conn.LocalAddr().String()].status != S_READY {
 		goto REGISGTRY
 	}
