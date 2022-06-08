@@ -62,7 +62,7 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	serverCm.mux.Unlock()
 
 	// Launch tcp server on localport
-	var errGroup errgroup.Group
+	errGroup := new(errgroup.Group)
 	errGroup.Go(func() error {
 		err := listenLocal(int(targetPort))
 		if err != nil {
@@ -103,6 +103,17 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 }
 
 func handleReply(conn net.Conn, pkt *proto.NWPacket) error {
+	if pkt.Code != proto.C_OK {
+		clientCm.mux.Lock()
+		clientCm.connMap[clientCm.transferConnKey].status = S_DUBIOUS
+		clientCm.mux.Unlock()
+		log.Warn("Registry client failed")
+	} else {
+		clientCm.mux.Lock()
+		clientCm.connMap[clientCm.transferConnKey].status = S_READY
+		clientCm.mux.Unlock()
+		log.Info("Registry client succeed")
+	}
 	return nil
 }
 
@@ -110,25 +121,56 @@ func handleHeartBeat(conn net.Conn, pkt *proto.NWPacket) error {
 	return nil
 }
 
-func handleData(conn net.Conn, pkt *proto.NWPacket) error {
+func handleDataServer(conn net.Conn, pkt *proto.NWPacket) error {
 	return nil
 }
+
+func handleDataClient(conn net.Conn, pkt *proto.NWPacket) error {
+	fmt.Printf("Pkt: %+v", pkt)
+	log.Infof("Enter forward traffic wiating for implement")
+	return nil
+}
+
 func handleFinalSignal(conn net.Conn, pkt *proto.NWPacket) error {
 	return nil
 }
 
 func handleManager(mode string) map[uint8]Callback {
 	handleMap := make(map[uint8]Callback)
-	handleMap[proto.FLG_DAT] = handleData
 	switch mode {
 	case "server":
 		handleMap[proto.FLG_REG] = handleRegistry
 		handleMap[proto.FLG_HB] = handleHeartBeat
 		handleMap[proto.FLG_FIN] = handleFinalSignal
+		handleMap[proto.FLG_DAT] = handleDataServer
 	case "client":
 		handleMap[proto.FLG_REP] = handleReply
+		handleMap[proto.FLG_DAT] = handleDataClient
 	}
 	return handleMap
+}
+
+func handlePkt(conn net.Conn, mod string) error {
+	// Get server handles map
+	handle := handleManager(mod)
+
+	errGroup := new(errgroup.Group)
+
+	// Fetch narwhal packet
+	pkt, err := getPktFromConn(conn)
+	if err != nil {
+		return err
+	}
+
+	// Handle packet goroutine
+	errGroup.Go(func() error {
+		err := handle[pkt.Flag](conn, pkt)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return nil
 }
 
 func getPktFromConn(conn net.Conn) (*proto.NWPacket, error) {
@@ -153,18 +195,6 @@ func getPayloadFromConn(conn net.Conn) ([]byte, error) {
 		return nil, &readError{msg: err.Error()}
 	}
 	return buf, nil
-}
-
-func forwardTrafficClient() error {
-	// TODO(lucheng): Implement forward traffic for client
-	// call forwardTraffic
-	pkt, err := getPktFromConn(clientCm.connMap[clientCm.transferConnKey].conn)
-	if err != nil {
-		log.Error(err)
-	}
-	fmt.Printf("%+v", pkt)
-	log.Infof("Enter forward traffic wiating for implement")
-	return nil
 }
 
 func netIPToUint32(ip net.IP) uint32 {
@@ -274,7 +304,7 @@ func forwardToRaw(cm *connManager) error {
 }
 
 func forwardTraffic(cm *connManager, conn net.Conn) error {
-	var errGroup errgroup.Group
+	errGroup := new(errgroup.Group)
 	errGroup.Go(func() error {
 		err := forwardToNW(cm, conn)
 		if err != nil {

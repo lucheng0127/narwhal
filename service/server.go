@@ -11,29 +11,6 @@ import (
 
 var serverCm connManager
 
-func handleConn(conn net.Conn) error {
-	// Get server handles map
-	handle := handleManager("server")
-
-	errGroup := new(errgroup.Group)
-
-	// Fetch narwhal packet
-	pkt, err := getPktFromConn(conn)
-	if err != nil {
-		return err
-	}
-
-	// Handle packet goroutine
-	errGroup.Go(func() error {
-		err := handle[pkt.Flag](conn, pkt)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	return nil
-}
-
 func LaunchTCPServer(port int) error {
 	// Listen server
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -51,7 +28,7 @@ func LaunchTCPServer(port int) error {
 		}
 
 		errGroup.Go(func() error {
-			err = handleConn(conn)
+			err = handlePkt(conn, "server")
 			if err != nil {
 				return err
 			}
