@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"narwhal/proto"
 	"net"
 	"strconv"
@@ -16,7 +17,9 @@ type Callback func(conn net.Conn, pkt *proto.NWPacket) error
 
 // Functions called by handlers
 
-func listenLocal(port int) error {
+func listenTargetPort(port int) error {
+	// Server listen target port, hand new connection,
+	// forward traffic come from target port to transfer conneciton
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return err
@@ -46,7 +49,7 @@ func listenLocal(port int) error {
 		errGroup := new(errgroup.Group)
 		for {
 			errGroup.Go(func() error {
-				err := forwardToNW(&serverCm, conn)
+				err := forwardToNW(&serverCm, conn, conn.RemoteAddr().String(), proto.UNKNOWN_ADDR)
 				if err != nil {
 					return err
 				}
@@ -55,6 +58,17 @@ func listenLocal(port int) error {
 			if err := errGroup.Wait(); err != nil {
 				panic(err)
 			}
+		}
+	}
+}
+
+func monitorLocalPort(conn net.Conn, sAddr, cAddr string) error {
+	// Monitor local port traffic from connection
+	// forward traffic from conn to transfer connection
+	for {
+		err := forwardToNW(&clientCm, conn, sAddr, cAddr)
+		if err != nil {
+			return err
 		}
 	}
 }
@@ -76,7 +90,7 @@ func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	// Launch tcp server on localport
 	errGroup := new(errgroup.Group)
 	errGroup.Go(func() error {
-		err := listenLocal(int(targetPort))
+		err := listenTargetPort(int(targetPort))
 		if err != nil {
 			return &hRegistryError{msg: err.Error()}
 		}
@@ -134,17 +148,18 @@ func handleHeartBeat(conn net.Conn, pkt *proto.NWPacket) error {
 }
 
 func handleDataServer(conn net.Conn, pkt *proto.NWPacket) error {
+	fmt.Printf("%+v", pkt)
 	return nil
 }
 
 func handleDataClient(transferConn net.Conn, pkt *proto.NWPacket) error {
-	fmt.Printf("Pkt: %+v", pkt)
 	// Get connMap key, from SAddr and SPort
 	sAddr := Uint32ToIP(pkt.SAddr)
 	connKey := fmt.Sprintf("%s:%d", sAddr.String(), int(pkt.SPort))
 
 	// If conn not exist, try to connect to local port,
 	// add conn to connMap, set connection.peerAddr
+	errGroup := new(errgroup.Group)
 	_, ok := clientCm.connMap[connKey]
 	if !ok {
 		localPortString := strings.Split(clientCm.transferConnKey, "-")
@@ -156,18 +171,31 @@ func handleDataClient(transferConn net.Conn, pkt *proto.NWPacket) error {
 		if err != nil {
 			panic(err)
 		}
+		log.Debugf("New connection local address %s remote address %s",
+			newConn.LocalAddr().String(), newConn.RemoteAddr().String())
 		conn := new(connection)
 		conn.conn = newConn
 		conn.status = S_READY
 		conn.peerAddr = connKey
 		clientCm.connMap[connKey] = conn
 
-		// TODO(lucheng): Start a new goroutine read data from conn send back to transferConn
+		// Start a new goroutine read data from conn send back to transferConn
+		errGroup.Go(func() error {
+			err := monitorLocalPort(newConn, connKey, newConn.LocalAddr().String())
+			if err != nil {
+				return err
+			}
+			return nil
+		})
 	}
 
 	// Forward traffic between local socket and transfer socket
+	log.Debugf("Send %d bytes data to %s", len(pkt.Payload), clientCm.connMap[connKey].conn.RemoteAddr().String())
 	_, err := clientCm.connMap[connKey].conn.Write(pkt.Payload)
 	if err != nil {
+		return err
+	}
+	if err := errGroup.Wait(); err != nil {
 		return err
 	}
 	return nil
@@ -229,7 +257,7 @@ func Uint32ToIP(intIP uint32) net.IP {
 func getPktFromConn(conn net.Conn) (*proto.NWPacket, error) {
 	buf := make([]byte, proto.BufSize)
 	_, err := conn.Read(buf)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		log.Warnf("Failed to read data from tcp connection %+v", conn)
 		return nil, err
 	}
@@ -244,7 +272,7 @@ func getPktFromConn(conn net.Conn) (*proto.NWPacket, error) {
 func getPayloadFromConn(conn net.Conn) ([]byte, error) {
 	buf := make([]byte, proto.PayloadBufSize)
 	_, err := conn.Read(buf)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return nil, &readError{msg: err.Error()}
 	}
 	return buf, nil
@@ -293,7 +321,7 @@ func CreatePacket(flag uint8, sAddr, cAddr string, pktBytes []byte) (*proto.NWPa
 
 // Forward functions
 
-func forwardToNW(cm *connManager, conn net.Conn) error {
+func forwardToNW(cm *connManager, conn net.Conn, sAddr, cAddr string) error {
 	// Forward traffic from socket, encode to
 	// narwhal packet send to transfer socket
 
@@ -302,9 +330,10 @@ func forwardToNW(cm *connManager, conn net.Conn) error {
 	if err != nil {
 		return err
 	}
+	log.Debugf("Read %d bytes data from %s", len(payload), conn.RemoteAddr().String())
 
 	// Create narwhal packet and encode
-	pkt, err := CreatePacket(proto.FLG_DAT, conn.RemoteAddr().String(), proto.UNKNOWN_ADDR, payload)
+	pkt, err := CreatePacket(proto.FLG_DAT, sAddr, cAddr, payload)
 	if err != nil {
 		return err
 	}
@@ -314,9 +343,15 @@ func forwardToNW(cm *connManager, conn net.Conn) error {
 	}
 
 	// Send narwhal packet to transferconn
+	// TODO(lucheng): Fix send data error, connection broken
+	log.Debugf("Try to send data to connection remote %s, local %s",
+		cm.connMap[cm.transferConnKey].conn.RemoteAddr().String(),
+		cm.connMap[cm.transferConnKey].conn.LocalAddr().String())
 	_, err = cm.connMap[cm.transferConnKey].conn.Write(pktBytes)
 	if err != nil {
+		log.Error(err)
 		return err
 	}
+	log.Debugf("Send %d bytes data to %s", len(pktBytes), cm.connMap[cm.transferConnKey].conn.RemoteAddr().String())
 	return nil
 }

@@ -75,6 +75,7 @@ func RunClient(conf *internal.ClientConf) error {
 	if err != nil {
 		return &clientError{msg: err.Error()}
 	}
+	log.Debugf("New connection remote %s local %s", conn.RemoteAddr().String(), conn.LocalAddr().String())
 	clientCm.transferConnKey = fmt.Sprintf("forwardPort-%d", conf.LocalPort)
 	transferConn := new(connection)
 	transferConn.conn = conn
