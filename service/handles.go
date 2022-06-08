@@ -12,6 +12,8 @@ import (
 
 type Callback func(conn net.Conn, pkt *proto.NWPacket) error
 
+// Functions called by handlers
+
 func listenLocal(port int) error {
 	listen, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
@@ -38,16 +40,24 @@ func listenLocal(port int) error {
 		serverCm.connMap[conn.RemoteAddr().String()] = newConn
 		serverCm.mux.Unlock()
 
-		// Forward traffic
+		// Forward traffic for new connection
+		errGroup := new(errgroup.Group)
 		for {
-			err := forwardTraffic(&serverCm, conn)
-			if err != nil {
-				return err
+			errGroup.Go(func() error {
+				err := forwardToNW(&serverCm, conn)
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+			if err := errGroup.Wait(); err != nil {
+				panic(err)
 			}
-			return nil
 		}
 	}
 }
+
+// Handlers for each narwhal packet
 
 func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	// Parase target port from payload, and mark transfer connection
@@ -128,6 +138,12 @@ func handleDataServer(conn net.Conn, pkt *proto.NWPacket) error {
 func handleDataClient(conn net.Conn, pkt *proto.NWPacket) error {
 	fmt.Printf("Pkt: %+v", pkt)
 	log.Infof("Enter forward traffic wiating for implement")
+	// Get connMap key, from SAddr and SPort
+
+	// If conn not exist, try to connect to local port,
+	// add conn to connMap, set connection.peerAddr
+
+	// Forward traffic between local socket and transfer socket
 	return nil
 }
 
@@ -172,6 +188,8 @@ func handlePkt(conn net.Conn, mod string) error {
 	})
 	return nil
 }
+
+// Utils functions for connection and packets
 
 func getPktFromConn(conn net.Conn) (*proto.NWPacket, error) {
 	buf := make([]byte, proto.BufSize)
@@ -237,6 +255,9 @@ func CreatePacket(flag uint8, sAddr, cAddr string, pktBytes []byte) (*proto.NWPa
 	}
 	return pkt, nil
 }
+
+// Forward functions
+
 func forwardToNW(cm *connManager, conn net.Conn) error {
 	// Forward traffic from socket, encode to
 	// narwhal packet send to transfer socket
@@ -298,29 +319,6 @@ func forwardToRaw(cm *connManager) error {
 
 	_, err = fConn.conn.Write(pkt.Payload)
 	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func forwardTraffic(cm *connManager, conn net.Conn) error {
-	errGroup := new(errgroup.Group)
-	errGroup.Go(func() error {
-		err := forwardToNW(cm, conn)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	errGroup.Go(func() error {
-		err := forwardToRaw(cm)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	// TODO(lucheng): Fix error not raise
-	if err := errGroup.Wait(); err != nil {
 		return err
 	}
 	return nil
