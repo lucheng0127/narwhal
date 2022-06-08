@@ -167,6 +167,13 @@ func forwardTrafficClient() error {
 	return nil
 }
 
+func netIPToUint32(ip net.IP) uint32 {
+	if len(ip) == 16 {
+		return binary.BigEndian.Uint32(ip[12:16])
+	}
+	return binary.BigEndian.Uint32(ip)
+}
+
 func CreatePacket(flag uint8, sAddr, cAddr string, pktBytes []byte) (*proto.NWPacket, error) {
 	pkt := new(proto.NWPacket)
 
@@ -177,8 +184,7 @@ func CreatePacket(flag uint8, sAddr, cAddr string, pktBytes []byte) (*proto.NWPa
 		pkt.SAddr = proto.UNASSIGNED_ADDR
 		pkt.SPort = proto.UNASSIGNED_PORT
 	} else {
-		// TODO(lucheng): Fix convert net.IP to uint32 not correct
-		pkt.SAddr = uint32(binary.BigEndian.Uint32(sAddrObj.IP))
+		pkt.SAddr = netIPToUint32(sAddrObj.IP)
 		pkt.SPort = uint16(sAddrObj.Port)
 	}
 	cAddrObj, err := net.ResolveTCPAddr("tcp", cAddr)
@@ -187,7 +193,7 @@ func CreatePacket(flag uint8, sAddr, cAddr string, pktBytes []byte) (*proto.NWPa
 		pkt.CAddr = proto.UNASSIGNED_ADDR
 		pkt.CPort = proto.UNASSIGNED_PORT
 	} else {
-		pkt.CAddr = uint32(binary.BigEndian.Uint32(cAddrObj.IP))
+		pkt.CAddr = netIPToUint32(cAddrObj.IP)
 		pkt.CPort = uint16(cAddrObj.Port)
 	}
 
@@ -283,6 +289,7 @@ func forwardTraffic(cm *connManager, conn net.Conn) error {
 		}
 		return nil
 	})
+	// TODO(lucheng): Fix error not raise
 	if err := errGroup.Wait(); err != nil {
 		return err
 	}
