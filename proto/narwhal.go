@@ -16,8 +16,9 @@ const (
 	FLG_FIN     uint8 = 0x48 // Flag teardown client
 	FLG_FIN_REP uint8 = 0x58 // Flag teardown reply
 	// Result code
-	RST_OK  uint8 = 0xa0 // Indecate result correct
-	RST_ERR uint8 = 0xa1 // Indecate result error occur
+	RST_OK     uint8 = 0xa0 // Indecate result correct
+	RST_ERR    uint8 = 0xa1 // Indecate result error occur
+	PORT_INUSE uint8 = 0xa2 // Target port used by other
 
 	// Others
 	MinTCPPktLen   int = 20

@@ -71,6 +71,7 @@ func readFromTransferConn(transferKey int) (*proto.NWPacket, error) {
 	buf := make([]byte, proto.BufSize)
 	n, err := CM.TransferConnMap[transferKey].Read(buf)
 	if err == io.EOF {
+		// TODO(lucheng): client should exit program
 		log.Warn("Connection closed by client")
 		// Rmove conn from TransferConnMap
 		delete(CM.TransferConnMap, transferKey)
@@ -211,7 +212,7 @@ func serviceNWServer(lister net.Listener) (net.Conn, error) {
 	return conn, nil
 }
 
-func _handPkt(conn net.Conn, mod string, transferKey int) error {
+func handPkt(conn net.Conn, mod string, transferKey int) error {
 	// Check transferKey exist before handPkt
 	_, ok := CM.TransferConnMap[transferKey]
 	if !ok {
@@ -246,10 +247,10 @@ func _handPkt(conn net.Conn, mod string, transferKey int) error {
 	return nil
 }
 
-func handPkt(conn net.Conn, mod string) {
+func monitorConn(conn net.Conn, mod string) {
 	for {
 		transferKey := conn.RemoteAddr().(*net.TCPAddr).Port
-		err := _handPkt(conn, "server", transferKey)
+		err := handPkt(conn, mod, transferKey)
 		if err != nil {
 			if internal.IsConnClosed(err) {
 				// Conn closed return
@@ -275,6 +276,6 @@ func launchNWServer(port int) error {
 		}
 
 		// Handle pkt forever with groutine, until conn closed
-		go handPkt(conn, "server")
+		go monitorConn(conn, "server")
 	}
 }
