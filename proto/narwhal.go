@@ -3,8 +3,8 @@ package proto
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"math/rand"
+	"narwhal/internal"
 )
 
 const (
@@ -15,18 +15,16 @@ const (
 	FLG_DAT     uint8 = 0x44 // Flag data
 	FLG_FIN     uint8 = 0x48 // Flag teardown client
 	FLG_FIN_REP uint8 = 0x58 // Flag teardown reply
-	// Narwhal addr and port
-	UNASSIGNED_ADDR uint32 = 0x0 // Unassigned address
-	UNASSIGNED_PORT uint16 = 0x0 // Unassigned port
-	// Option result
-	C_OK  uint8 = 0xa0 // Option indecate result correct
-	C_ERR uint8 = 0xa1 // Option indecate result error occur
+	// Result code
+	RST_OK  uint8 = 0xa0 // Indecate result correct
+	RST_ERR uint8 = 0xa1 // Indecate result error occur
 
 	// Others
-	NWHeaderLen    int = 16
-	NoiseLen       int = 4    // Minium tcp packet length 20, NWHeaderLen + NoiseLen = 20 it ok send empty packet
-	BufSize        int = 1024 // Default layer3 MTU: 1500, less than 1500-20(IPHeaderlen)-20(TCPHeaderlen) is good
-	PayloadBufSize int = 1004 // Bufsize of narwhal size is 1024, payload max size = 1024 - 16 - 4
+	MinTCPPktLen   int = 20
+	NWHeaderLen    int = 6
+	MinNoiseLen    int = 4    // Minium noise length, make sure packet large than 20 bytes
+	BufSize        int = 1034 // 1034 + 20(TCPHeader) + 20(IPHeader) < 1500
+	PayloadBufSize int = 1024
 
 	// Net addr
 	UNKNOWN_ADDR string = "Unknown addr" // Unknown address, set addr and port to zero
@@ -34,12 +32,9 @@ const (
 
 type NWHeader struct {
 	Flag   uint8  // Indicate packet type
-	SAddr  uint32 // Socket address of server that communicate to target port
-	SPort  uint16 // Socket port of server that communicate to target port
-	CAddr  uint32 // Socket address of client that communicate to forward port
-	CPort  uint16 // Socket port of client that communicate to forward port
+	Seq    uint16 // Seq num, also key of connMap
 	Length uint16 // Payload length
-	Code   uint8  // Used by reply type packet, OK or ERR to indicate request type packet handle succeed or failed
+	Result uint8  // Result of request type packets
 }
 
 type NWPacket struct {
@@ -48,35 +43,16 @@ type NWPacket struct {
 	Noise   []byte
 }
 
-type ProtoError struct {
-	msg string
-}
-
-type ProtoEncodeError struct {
-	ProtoError
-}
-
-type ProtoDecodeError struct {
-	ProtoError
-}
-
-func (err *ProtoError) Error() string {
-	return fmt.Sprintf("Narwhal protocol error %s", err.msg)
-}
-
-func (err *ProtoEncodeError) Error() string {
-	return fmt.Sprintf("Narwhal protocol encode error %s", err.msg)
-}
-
-func (err *ProtoDecodeError) Error() string {
-	return fmt.Sprintf("Narwhal protocol decode error %s", err.msg)
-}
-
 func (pkt *NWPacket) SetNoise() error {
-	pkt.Noise = make([]byte, NoiseLen)
+	minNoiseLen := MinTCPPktLen - NWHeaderLen - int(pkt.Length)
+	if minNoiseLen > MinNoiseLen {
+		pkt.Noise = make([]byte, minNoiseLen)
+	} else {
+		pkt.Noise = make([]byte, MinNoiseLen)
+	}
 	_, err := rand.Read(pkt.Noise)
 	if err != nil {
-		return &ProtoError{msg: err.Error()}
+		return internal.NewError("Protocol set noise", err.Error())
 	}
 	return nil
 }
@@ -86,18 +62,11 @@ func (pkt *NWPacket) SetPayload(b []byte) {
 	pkt.Length = uint16(len(pkt.Payload))
 }
 
-func (pkt *NWPacket) SetUnassignedAddrs() {
-	pkt.SAddr = UNASSIGNED_ADDR
-	pkt.SPort = UNASSIGNED_PORT
-	pkt.CAddr = UNASSIGNED_ADDR
-	pkt.CPort = UNASSIGNED_PORT
-}
-
 func (pkt *NWPacket) SetTargetPort(port int16) error {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.BigEndian, int16(port))
 	if err != nil {
-		return &ProtoError{msg: err.Error()}
+		return internal.NewError("Protocol set target port", err.Error())
 	}
 	pkt.SetPayload(buf.Bytes())
 	return nil
@@ -111,15 +80,15 @@ func (pkt *NWPacket) Encode() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.BigEndian, pkt.NWHeader)
 	if err != nil {
-		return nil, &ProtoEncodeError{ProtoError{msg: err.Error()}}
+		return nil, internal.NewError("Protocol encode header", err.Error())
 	}
 	_, err = buf.Write(pkt.Payload)
 	if err != nil {
-		return nil, &ProtoEncodeError{ProtoError{msg: err.Error()}}
+		return nil, internal.NewError("Protocol set payload", err.Error())
 	}
 	_, err = buf.Write(pkt.Noise)
 	if err != nil {
-		return nil, &ProtoEncodeError{ProtoError{msg: err.Error()}}
+		return nil, internal.NewError("Protocol write noise ", err.Error())
 	}
 	return buf.Bytes(), nil
 }
@@ -129,13 +98,13 @@ func Decode(b []byte) (*NWPacket, error) {
 	buf := bytes.NewReader(b)
 	err := binary.Read(buf, binary.BigEndian, &pkt.NWHeader)
 	if err != nil {
-		return nil, &ProtoDecodeError{ProtoError{msg: err.Error()}}
+		return nil, internal.NewError("Protocol decode header", err.Error())
 	}
 
 	pkt.Payload = make([]byte, pkt.Length)
 	_, err = buf.Read(pkt.Payload)
 	if err != nil {
-		return nil, &ProtoDecodeError{ProtoError{msg: err.Error()}}
+		return nil, internal.NewError("Protocol read payload", err.Error())
 	}
 	return pkt, nil
 }

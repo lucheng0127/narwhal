@@ -5,26 +5,28 @@ import (
 	"sync"
 )
 
-const (
-	S_DUBIOUS uint8 = 0xa0
-	S_READY   uint8 = 0xa1
-	S_CLOSED  uint8 = 0xa2
-)
+var CM ConnManager
 
-type connection struct {
-	conn     net.Conn
-	status   uint8
-	peerAddr string // Use peerAddr format C/SAddr, C/SPort
+func init() {
+	CM.ConnMap = make(map[uint16]*Connection)
+	CM.LisMap = make(map[uint16]*Lister)
 }
 
-type lister struct {
-	lister net.Listener
-	status uint8
+type Connection struct {
+	Conn net.Conn
+	Key  uint16 // Key of connMap, set seq num as key
 }
 
-type connManager struct {
-	mux             sync.Mutex
-	connMap         map[string]*connection // Socket address as key, store net.Conn
-	lisMap          map[int]*lister        // Port as key, store TCP lister
-	transferConnKey string                 // Key of connection, used to forward socket traffic
+type Lister struct {
+	Lister net.Listener
+	Key    uint16 // Key of lisMap, set target port as key
 }
+
+type ConnManager struct {
+	Mux             sync.Mutex
+	ConnMap         map[uint16]*Connection
+	LisMap          map[uint16]*Lister
+	TransferConnMap map[int]net.Conn // For server use the LocalAddr port as key, for client use the Remote Addr port as key
+}
+
+// Functions of connManager
