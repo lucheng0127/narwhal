@@ -49,6 +49,7 @@ func forwardToTransfer(conn *Connection, transferKey int) error {
 		}
 
 		// Encode to nw packet
+		// Use conn key as seq num, so when packet back can find conn to porxy port
 		pkt, err := newNWPkt(proto.FLG_DAT, conn.Key, buf)
 		if err != nil {
 			return err
@@ -63,7 +64,7 @@ func forwardToTransfer(conn *Connection, transferKey int) error {
 		if err != nil {
 			return internal.NewError("Send data to transfer connection error", err.Error())
 		}
-		log.Debugf("Send %d bytes data to transfer connection", n)
+		log.Debugf("Send %d bytes data to transfer connection, seq %d", n, int(pkt.Seq))
 	}
 }
 
@@ -105,33 +106,9 @@ func newConnToLocal(seq uint16) error {
 	return nil
 }
 
-func forwardToLocal(transferKey int) error {
-	// Parse narwhal packet from transfer conn, get seq
-	pkt, err := readFromTransferConn(transferKey)
-	if pkt == nil {
-		return nil
-	}
-	if !pkt.Validate() {
-		log.Debugf("Not a narwhal packet, do nothing")
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	// Get local conn from ConnMap
-	// Create one if not exist
-	_, ok := CM.ConnMap[pkt.Seq]
-	if !ok {
-		err := newConnToLocal(pkt.Seq)
-		if err != nil {
-			return internal.NewError("Connection to local error", err.Error())
-		}
-	}
-	localConn := CM.ConnMap[pkt.Seq]
-
+func forwardToLocal(conn net.Conn, pkt *proto.NWPacket) error {
 	// Write to local conn
-	n, err := localConn.Conn.Write(pkt.Payload)
+	n, err := conn.Write(pkt.Payload)
 	if err != nil {
 		return internal.NewError("Send data to local connection error", err.Error())
 	}
@@ -183,6 +160,7 @@ func listenAndService(port int) error {
 		// Run forward grountine
 		errGup := new(errgroup.Group)
 		errGup.Go(func() error {
+			// Transfer conn key is proxy port, so use localaddr
 			transferKey := conn.Conn.LocalAddr().(*net.TCPAddr).Port
 			err := forwardToTransfer(conn, transferKey)
 			if err != nil {
@@ -212,7 +190,11 @@ func serviceNWServer(lister net.Listener) (net.Conn, error) {
 	return conn, nil
 }
 
-func handPkt(conn net.Conn, mod string, transferKey int) error {
+func handPkt(conn net.Conn, mod string) error {
+	transferKey := conn.RemoteAddr().(*net.TCPAddr).Port
+	if mod == "client" {
+		transferKey = clientObj.localPort
+	}
 	// Check transferKey exist before handPkt
 	_, ok := CM.TransferConnMap[transferKey]
 	if !ok {
@@ -249,8 +231,7 @@ func handPkt(conn net.Conn, mod string, transferKey int) error {
 
 func monitorConn(conn net.Conn, mod string) {
 	for {
-		transferKey := conn.RemoteAddr().(*net.TCPAddr).Port
-		err := handPkt(conn, mod, transferKey)
+		err := handPkt(conn, mod)
 		if err != nil {
 			if internal.IsConnClosed(err) {
 				// Conn closed return

@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/binary"
+	"fmt"
 	"narwhal/internal"
 	"narwhal/proto"
 	"net"
@@ -17,6 +18,12 @@ type Callback func(conn net.Conn, pkt *proto.NWPacket) error
 func handleRegistry(conn net.Conn, pkt *proto.NWPacket) error {
 	// Get target pot registry it
 	targetPort := int(binary.BigEndian.Uint16(pkt.Payload))
+	CM.Mux.Lock()
+	newConn := new(Connection)
+	newConn.Conn = conn
+	newConn.Key = pkt.Seq
+	CM.ConnMap[pkt.Seq] = newConn
+	CM.Mux.Unlock()
 
 	errGup := new(errgroup.Group)
 	errGup.Go(func() error {
@@ -67,10 +74,48 @@ func handleHeartBeat(conn net.Conn, pkt *proto.NWPacket) error {
 }
 
 func handleDataServer(conn net.Conn, pkt *proto.NWPacket) error {
+	log.Info(pkt.Seq)
 	return nil
 }
 
 func handleDataClient(transferConn net.Conn, pkt *proto.NWPacket) error {
+	errGup := new(errgroup.Group)
+
+	// Get seq num
+	_, ok := CM.ConnMap[pkt.Seq]
+	if !ok {
+		// Dial to local port, add into ConnMap
+		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", clientObj.localPort))
+		if err != nil {
+			return internal.NewError("Dial to local", err.Error())
+		}
+		// Use seq as conn key, map local port and remote port socket conn by seq
+		newConn := new(Connection)
+		newConn.Conn = conn
+		newConn.Key = pkt.Seq
+		CM.ConnMap[pkt.Seq] = newConn
+		// Forward local to transfer forever
+		errGup.Go(func() error {
+			err := forwardToTransfer(newConn, clientObj.localPort)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+	conn := CM.ConnMap[pkt.Seq]
+
+	// Send payload to conn and send data back to conn
+	errGup.Go(func() error {
+		err := forwardToLocal(conn.Conn, pkt)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err := errGup.Wait(); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -52,7 +52,7 @@ func RunClient(conf *internal.ClientConf) error {
 		return internal.NewError("Connect to narwhal server error", err.Error())
 	}
 	CM.Mux.Lock()
-	CM.TransferConnMap[conn.RemoteAddr().(*net.TCPAddr).Port] = conn
+	CM.TransferConnMap[conf.LocalPort] = conn
 	CM.Mux.Unlock()
 
 	// Monitor connection forever, handle pkt, run before send reg pkt
