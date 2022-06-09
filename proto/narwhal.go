@@ -43,6 +43,15 @@ type NWPacket struct {
 	Noise   []byte
 }
 
+func (pkt *NWPacket) Validate() bool {
+	switch pkt.Flag {
+	case FLG_REG, FLG_REP, FLG_HB, FLG_DAT, FLG_FIN, FLG_FIN_REP:
+		return true
+	default:
+		return false
+	}
+}
+
 func (pkt *NWPacket) SetNoise() error {
 	minNoiseLen := MinTCPPktLen - NWHeaderLen - int(pkt.Length)
 	if minNoiseLen > MinNoiseLen {

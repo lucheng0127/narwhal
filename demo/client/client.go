@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"sync"
 )
@@ -26,7 +27,7 @@ func forwardTraffic(srcConnPort, dstConnPort int) {
 	for {
 		buf := make([]byte, 1024)
 		n, err := connMap[srcConnPort].Read(buf)
-		if err != nil {
+		if err != nil && err != io.EOF {
 			panic(err)
 		}
 		connMap[dstConnPort].Write(buf[:n])

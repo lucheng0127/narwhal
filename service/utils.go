@@ -59,7 +59,6 @@ func forwardToTransfer(conn *Connection, transferKey int) error {
 		}
 
 		// Write to transfer conn
-		// TODO(lucheng): If transferConn not exist do nothing
 		n, err := transferConn.Write(pktBytes)
 		if err != nil {
 			return internal.NewError("Send data to transfer connection error", err.Error())
@@ -71,7 +70,12 @@ func forwardToTransfer(conn *Connection, transferKey int) error {
 func readFromTransferConn(transferKey int) (*proto.NWPacket, error) {
 	buf := make([]byte, proto.BufSize)
 	n, err := CM.TransferConnMap[transferKey].Read(buf)
-	if err != nil {
+	if err == io.EOF {
+		log.Warn("Connection closed by client")
+		// Rmove conn from TransferConnMap
+		delete(CM.TransferConnMap, transferKey)
+		return nil, nil
+	} else if err != nil {
 		return nil, internal.NewError("Read transfer connection error", err.Error())
 	}
 	log.Debugf("Read %d bytes from transfer connection", n)
@@ -103,6 +107,13 @@ func newConnToLocal(seq uint16) error {
 func forwardToLocal(transferKey int) error {
 	// Parse narwhal packet from transfer conn, get seq
 	pkt, err := readFromTransferConn(transferKey)
+	if pkt == nil {
+		return nil
+	}
+	if !pkt.Validate() {
+		log.Debugf("Not a narwhal packet, do nothing")
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -191,19 +202,32 @@ func serviceNWServer(lister net.Listener) (net.Conn, error) {
 	if err != nil {
 		return nil, internal.NewError("Narwhal server accept connection error", err.Error())
 	}
+	log.Debugf("New connection established, remote address %s", conn.RemoteAddr().String())
 
 	// Add connection to transferConnMap
 	CM.Mux.Lock()
-	CM.TransferConnMap[conn.LocalAddr().(*net.TCPAddr).Port] = conn
+	CM.TransferConnMap[conn.RemoteAddr().(*net.TCPAddr).Port] = conn
 	CM.Mux.Unlock()
 	return conn, nil
 }
 
-func handPkt(conn net.Conn, mod string, transferKey int) error {
+func _handPkt(conn net.Conn, mod string, transferKey int) error {
+	// Check transferKey exist before handPkt
+	_, ok := CM.TransferConnMap[transferKey]
+	if !ok {
+		return new(internal.TransferConnNotExist)
+	}
 	handles := handleManager(mod)
 
 	// Get pkt from transfer conn
 	pkt, err := readFromTransferConn(transferKey)
+	if pkt == nil {
+		return nil
+	}
+	if !pkt.Validate() {
+		log.Debugf("Not a narwhal packet, do nothing")
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -222,22 +246,35 @@ func handPkt(conn net.Conn, mod string, transferKey int) error {
 	return nil
 }
 
+func handPkt(conn net.Conn, mod string) {
+	for {
+		transferKey := conn.RemoteAddr().(*net.TCPAddr).Port
+		err := _handPkt(conn, "server", transferKey)
+		if err != nil {
+			if internal.IsConnClosed(err) {
+				// Conn closed return
+				break
+			}
+			panic(err)
+		}
+	}
+}
+
 func launchNWServer(port int) error {
 	// Listen servr port and registry transfer conn
 	lister, err := newTCPServer(port)
 	if err != nil {
 		return err
 	}
-	conn, err := serviceNWServer(lister)
-	if err != nil {
-		return err
-	}
 
-	// Handle pkt forever
+	// Accept connection forever
 	for {
-		err := handPkt(conn, "server", port)
+		conn, err := serviceNWServer(lister)
 		if err != nil {
 			return err
 		}
+
+		// Handle pkt forever with groutine, until conn closed
+		go handPkt(conn, "server")
 	}
 }
