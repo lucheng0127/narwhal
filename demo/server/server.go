@@ -45,7 +45,7 @@ func main() {
 	transferPort := listenServer(7023)
 
 	// Listen 80 wait connection, in demo we only handle one single connecion
-	forwardPort := listenServer(4000)
+	forwardPort := listenServer(2222)
 
 	// Forward traffic between two connection
 	var wg sync.WaitGroup

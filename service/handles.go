@@ -25,6 +25,8 @@ type mcCallback func(conn *Connection, mod int) error
 
 // Monitor connection handlers
 func handlePkt(transferConn *Connection, mod int) error {
+	// TODO(lucheng): Fix handle pkt not forever
+
 	// Check connection established before handle pkt
 	// For server use the RemoteAddr port as key when listen server port,
 	transferKey := transferConn.Conn.RemoteAddr().(*net.TCPAddr).Port

@@ -39,7 +39,7 @@ func main() {
 	transferPort := dialServer(7023)
 
 	// Dial 8000
-	forwardPort := dialServer(8000)
+	forwardPort := dialServer(22)
 
 	// Forward traffic
 	var wg sync.WaitGroup
