@@ -9,7 +9,6 @@ import (
 	"net"
 
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
 // Utils funcs
@@ -37,8 +36,7 @@ func readFromLocalConn(conn net.Conn) ([]byte, error) {
 	return buf, nil
 }
 
-func forwardToTransfer(conn *Connection, transferKey int) error {
-	transferConn := CM.TransferConnMap[transferKey]
+func forwardToTransfer(conn *Connection, transferConn net.Conn) error {
 	localConn := conn.Conn
 
 	for {
@@ -68,42 +66,39 @@ func forwardToTransfer(conn *Connection, transferKey int) error {
 	}
 }
 
-func readFromTransferConn(transferKey int) (*proto.NWPacket, error) {
+func readFromTransferConn(transferConn *Connection) (*proto.NWPacket, error) {
 	buf := make([]byte, proto.BufSize)
-	n, err := CM.TransferConnMap[transferKey].Read(buf)
+	n, err := transferConn.Conn.Read(buf)
 	if err == io.EOF {
 		// TODO(lucheng): client should exit program
 		log.Warn("Connection closed by client")
-		// Rmove conn from TransferConnMap
-		delete(CM.TransferConnMap, transferKey)
+		// Rmove conn from TransferConnMap and ConnMap
+		// For client transferConn key is CM.ClientLocalPort
+		// For server transferConn key is remote addr
+		_, ok := CM.TransferConnMap[CM.ClientLocalPort]
+		if ok {
+			delete(CM.TransferConnMap, CM.ClientLocalPort)
+		}
+		_, ok = CM.TransferConnMap[transferConn.Conn.RemoteAddr().(*net.TCPAddr).Port]
+		if ok {
+			delete(CM.TransferConnMap, transferConn.Conn.RemoteAddr().(*net.TCPAddr).Port)
+		}
+		_, ok = CM.ConnMap[transferConn.Key]
+		if ok {
+			delete(CM.ConnMap, transferConn.Key)
+		}
 		return nil, nil
 	} else if err != nil {
 		return nil, internal.NewError("Read transfer connection error", err.Error())
 	}
-	log.Debugf("Read %d bytes from transfer connection", n)
 
 	pkt, err := proto.Decode(buf)
 	if err != nil {
 		return nil, err
 	}
 
+	log.Debugf("Read %d bytes from transfer connection, seq %d", n, pkt.Seq)
 	return pkt, nil
-}
-
-func newConnToLocal(seq uint16) error {
-	// Dial to local TCP server
-	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", clientObj.localPort))
-	if err != nil {
-		return err
-	}
-	newConn := new(Connection)
-	newConn.Conn = conn
-	newConn.Key = seq
-	// Add to ConnMap
-	CM.Mux.Lock()
-	CM.ConnMap[seq] = newConn
-	CM.Mux.Unlock()
-	return nil
 }
 
 func forwardToLocal(conn net.Conn, pkt *proto.NWPacket) error {
@@ -136,6 +131,9 @@ func serviceTCPServer(lister net.Listener) (*Connection, error) {
 	CM.Mux.Lock()
 	CM.ConnMap[newConn.Key] = newConn
 	CM.Mux.Unlock()
+	log.Debugf("New connection local %s, remotes %s\nseq %d",
+		newConn.Conn.LocalAddr().String(), newConn.Conn.RemoteAddr().String(),
+		newConn.Key)
 	return newConn, nil
 }
 
@@ -154,84 +152,18 @@ func listenAndService(port int) error {
 	for {
 		conn, err := serviceTCPServer(lister)
 		if err != nil {
+			// TODO(lucheng): handle port in used
 			return err
 		}
 
 		// Run forward grountine
-		errGup := new(errgroup.Group)
-		errGup.Go(func() error {
-			// Transfer conn key is proxy port, so use localaddr
-			transferKey := conn.Conn.LocalAddr().(*net.TCPAddr).Port
-			err := forwardToTransfer(conn, transferKey)
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-
-		if err = errGup.Wait(); err != nil {
-			return err
-		}
+		go monitorConn(conn, int(MOD_S))
 	}
 }
 
-func serviceNWServer(lister net.Listener) (net.Conn, error) {
-	// Accept connection
-	conn, err := lister.Accept()
-	if err != nil {
-		return nil, internal.NewError("Narwhal server accept connection error", err.Error())
-	}
-	log.Debugf("New connection established, remote address %s", conn.RemoteAddr().String())
-
-	// Add connection to transferConnMap
-	CM.Mux.Lock()
-	CM.TransferConnMap[conn.RemoteAddr().(*net.TCPAddr).Port] = conn
-	CM.Mux.Unlock()
-	return conn, nil
-}
-
-func handPkt(conn net.Conn, mod string) error {
-	transferKey := conn.RemoteAddr().(*net.TCPAddr).Port
-	if mod == "client" {
-		transferKey = clientObj.localPort
-	}
-	// Check transferKey exist before handPkt
-	_, ok := CM.TransferConnMap[transferKey]
-	if !ok {
-		return new(internal.TransferConnNotExist)
-	}
-	handles := handleManager(mod)
-
-	// Get pkt from transfer conn
-	pkt, err := readFromTransferConn(transferKey)
-	if pkt == nil {
-		return nil
-	}
-	if !pkt.Validate() {
-		log.Debugf("Not a narwhal packet, do nothing")
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	errGup := new(errgroup.Group)
-	errGup.Go(func() error {
-		err := handles[pkt.Flag](conn, pkt)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err := errGup.Wait(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func monitorConn(conn net.Conn, mod string) {
+func doMonitorConn(conn *Connection, mod int, callback mcCallback) {
 	for {
-		err := handPkt(conn, mod)
+		err := callback(conn, mod)
 		if err != nil {
 			if internal.IsConnClosed(err) {
 				// Conn closed return
@@ -242,21 +174,17 @@ func monitorConn(conn net.Conn, mod string) {
 	}
 }
 
-func launchNWServer(port int) error {
-	// Listen servr port and registry transfer conn
-	lister, err := newTCPServer(port)
-	if err != nil {
-		return err
-	}
-
-	// Accept connection forever
-	for {
-		conn, err := serviceNWServer(lister)
-		if err != nil {
-			return err
-		}
-
-		// Handle pkt forever with groutine, until conn closed
-		go monitorConn(conn, "server")
+func monitorConn(conn *Connection, mod int) {
+	// Mointor connections,
+	// For transfer connections use different handle to handle traffic
+	// For connection connect with internet and target port, use forwardTraffic
+	// to forward traffic between transfer connection and connection
+	// For connection connect to client local port, use forwardTraffic
+	// to forward traffic between transfer connection and connection
+	switch mod {
+	case 0, 1:
+		doMonitorConn(conn, mod, handlePkt)
+	case 2, 3:
+		doMonitorConn(conn, mod, handleConn)
 	}
 }
