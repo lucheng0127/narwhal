@@ -1,68 +1,90 @@
 package service
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"narwhal/internal"
-	"narwhal/proto"
 	"net"
-	"sync"
 
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 )
 
-func registryClient(conn net.Conn, targetPort int) error {
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.BigEndian, uint16(targetPort))
-	if err != nil {
-		return internal.NewError("Registry client", err.Error())
-	}
+func handleForwardConn(conn *Connection) {
+	for {
+		// Fetch data to packet
+		pktBytes, err := fetchDataToPktBytes(conn)
+		if err != nil {
+			panic(err)
+		}
 
-	pkt, err := newNWPkt(proto.FLG_REG, newSeq(), buf.Bytes())
-	if err != nil {
-		return internal.NewError("Registry client", err.Error())
-	}
-	pktBytes, err := pkt.Encode()
-	if err != nil {
-		return internal.NewError("Registry client", err.Error())
-	}
+		// Send to transfer connection
+		transferConn, ok := CM.TConnMap[CM.ServerAddr]
+		if !ok {
+			panic("Connection to narwhal server broken")
+		}
 
-	n, err := conn.Write(pktBytes)
-	if err != nil {
-		return internal.NewError("Registry client", err.Error())
+		_, err = transferConn.Write(pktBytes)
+		if err != nil {
+			log.Errorf("Send packet bytes to transfer connection error\n%s", err.Error())
+			continue
+		}
 	}
-	log.Debugf("Send registy packet %d bytes", n)
+}
+
+func handleClientConn(conn *Connection) error {
+	//handles := clientHandle
+
+	for {
+		pkt, err := fetchPkt(conn)
+		if err != nil {
+			return err
+		}
+		if pkt == nil {
+			// Connection closed out loop
+			break
+		}
+
+		handleDataClient(pkt)
+		//go handles[pkt.Flag](pkt)
+	}
 	return nil
 }
 
 func RunClient(conf *internal.ClientConf) error {
-	log.Infof("Launch client with config: %+v", *conf)
-	CM.ClientLocalPort = conf.LocalPort
-	// Registry client, panic error
+	// Connection to narwhal
 	serverAddr := fmt.Sprintf("%s:%d", conf.RemoteAddr, conf.ServerPort)
 	conn, err := net.Dial("tcp", serverAddr)
 	if err != nil {
 		return internal.NewError("Connect to narwhal server error", err.Error())
 	}
-	CM.Mux.Lock()
+	CM.ClientLocalPort = conf.LocalPort
+	CM.ServerAddr = conn.RemoteAddr().String()
 	newConn := new(Connection)
 	newConn.Conn = conn
 	newConn.Key = newSeq()
-	CM.ConnMap[newConn.Key] = newConn
-	CM.TransferConnMap[CM.ClientLocalPort] = conn
+	// No need send conn to ConnMap
+
+	// Set TConnMap, serverAddr as key
+	CM.Mux.Lock()
+	CM.TConnMap[conn.RemoteAddr().String()] = conn
 	CM.Mux.Unlock()
+	errGup := new(errgroup.Group)
+	log.Infof("New connection to %s local %s",
+		newConn.Conn.RemoteAddr().String(), newConn.Conn.LocalAddr().String())
 
-	// Monitor connection forever, handle pkt, run before send reg pkt
-	var wg sync.WaitGroup
-	go monitorConn(newConn, int(MOD_T_C))
-	wg.Add(1)
+	// Groutine: Monitor conn and handle pkt
+	errGup.Go(func() error {
+		err := handleClientConn(newConn)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 
-	err = registryClient(conn, conf.RemotePort)
-	if err != nil {
+	// TODO(lucheng): Registry client with target port
+
+	if err := errGup.Wait(); err != nil {
 		return err
 	}
-
-	wg.Wait()
 	return nil
 }
