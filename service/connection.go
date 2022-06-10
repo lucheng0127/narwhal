@@ -11,6 +11,7 @@ func init() {
 	CM.ConnMap = make(map[uint16]*Connection)
 	CM.LisMap = make(map[uint16]*Lister)
 	CM.TransferConnMap = make(map[int]net.Conn)
+	CM.ClientLocalPort = 0
 }
 
 type Connection struct {
@@ -31,6 +32,7 @@ type ConnManager struct {
 	// For server use the RemoteAddr port as key when listen server port,
 	// For client use the RemoteAddr port as key
 	TransferConnMap map[int]net.Conn
+	ClientLocalPort int
 }
 
 // Functions of connManager
