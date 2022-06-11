@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/binary"
 	"fmt"
 	"narwhal/internal"
 	"narwhal/proto"
@@ -8,19 +9,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 )
-
-type pktHandle func(pkt *proto.NWPacket)
-
-func getHandles(hType string) map[uint8]pktHandle {
-	handleMap := make(map[uint8]pktHandle)
-	switch hType {
-	case "Server":
-		handleMap[proto.FLG_DAT] = handleDataServer
-	case "Client":
-		handleMap[proto.FLG_DAT] = handleDataClient
-	}
-	return handleMap
-}
 
 // Narwhal client handlers
 func handleDataClient(pkt *proto.NWPacket) {
@@ -55,6 +43,17 @@ func handleDataClient(pkt *proto.NWPacket) {
 	}
 }
 
+func handleReply(pkt *proto.NWPacket) {
+	switch pkt.Result {
+	case proto.RST_OK:
+		log.Infof("Registry port %d succeed", CM.ClientLocalPort)
+		return
+	default:
+		eMsg := fmt.Sprintf("Registry port %d failed", CM.ClientLocalPort)
+		panic(eMsg)
+	}
+}
+
 // Narwhal server handlers
 func handleDataServer(pkt *proto.NWPacket) {
 	// Get conn via pkt.Seq
@@ -72,6 +71,42 @@ func handleDataServer(pkt *proto.NWPacket) {
 	}
 	log.Debugf("Send %d bytes data to connection %s",
 		n, targetConn.Conn.RemoteAddr().String())
+}
+
+func handleRegistry(pkt *proto.NWPacket, conn *Connection) {
+	targetPort := int(binary.BigEndian.Uint16(pkt.Payload))
+
+	// Launch proxy server
+	proxyServer := new(ProxyServer)
+	proxyServer.port = targetPort
+	NWServer.proxyMap[targetPort] = proxyServer
+
+	go run(proxyServer)
+
+	// New reply pkt and send back
+	repPkt := new(proto.NWPacket)
+	repPkt.Flag = proto.FLG_REP
+	repPkt.Seq = conn.Key
+	repPkt.Result = proto.RST_OK
+	repPkt.SetPayload(pkt.Payload)
+	err := pkt.SetNoise()
+	if err != nil {
+		panic(internal.NewError("Reply regisgtry", err.Error()))
+	}
+	// Store transfer connection for target port
+	CM.Mux.Lock()
+	CM.TConnMap[fmt.Sprintf(":%d", targetPort)] = conn.Conn
+	CM.Mux.Unlock()
+
+	repPktBytes, err := repPkt.Encode()
+	if err != nil {
+		panic(internal.NewError("Reply regisgtry", err.Error()))
+	}
+	_, err = conn.Conn.Write(repPktBytes)
+	if err != nil {
+		panic(internal.NewError("Reply regisgtry", err.Error()))
+	}
+	log.Infof("Send reply packet for target port %d", targetPort)
 }
 
 // Narwhal client handlers

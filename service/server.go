@@ -3,10 +3,10 @@ package service
 import (
 	"fmt"
 	"narwhal/internal"
+	"narwhal/proto"
 	"net"
 
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
 type server interface {
@@ -35,8 +35,6 @@ type ProxyServer struct {
 
 func handleServerConn(conn *Connection) {
 	// Read pkt from connection forever, send pkt to different handle according to flag
-	handles := getHandles("Server")
-
 	for {
 		pkt, err := fetchPkt(conn)
 		if err != nil {
@@ -47,7 +45,12 @@ func handleServerConn(conn *Connection) {
 			break
 		}
 
-		go handles[pkt.Flag](pkt)
+		switch pkt.Flag {
+		case proto.FLG_DAT:
+			go handleDataServer(pkt)
+		case proto.FLG_REG:
+			go handleRegistry(pkt, conn)
+		}
 	}
 }
 
@@ -66,15 +69,6 @@ func (server *NarwhalServer) launch() error {
 		newConn := new(Connection)
 		newConn.Key = newSeq()
 		newConn.Conn = conn
-		// Add connection into ConnMap and TransferConnMap
-		// For narwhal server use remote addr as key
-		CM.Mux.Lock()
-		CM.ConnMap[newConn.Key] = newConn
-		//TODO(lucheng) Set TConnMap in registry
-		CM.TConnMap["127.0.0.1:2222"] = conn
-		CM.Mux.Unlock()
-		// TODO(lucheng): Remove it
-		NWServer.proxyMap[2222].tKey = conn.RemoteAddr().String()
 
 		log.Infof("New connection to narwhal server remote: %s", newConn.Conn.RemoteAddr().String())
 		// Monitor conn and handle pkt
@@ -91,7 +85,7 @@ func handleProxyConn(conn *Connection) {
 		}
 
 		// Send to transfer connection
-		proxyAddr := conn.Conn.LocalAddr().String()
+		proxyAddr := fmt.Sprintf(":%d", conn.Conn.LocalAddr().(*net.TCPAddr).Port)
 		transferConn, ok := CM.TConnMap[proxyAddr]
 		if !ok {
 			log.Errorf("Transfer connection for proxy %s closed", proxyAddr)
@@ -136,20 +130,6 @@ func (server *ProxyServer) launch() error {
 func RunServer(conf *internal.ServerConf) error {
 	log.Infof("Launch server with config: %+v", *conf)
 	NWServer.port = conf.ListenPort
-	errGup := new(errgroup.Group)
-
-	// TODO(lucheng): Launch proxy server after registry
-	proxyServer := new(ProxyServer)
-	proxyServer.port = 2222
-	NWServer.proxyMap[2222] = proxyServer
-
-	errGup.Go(func() error {
-		err := run(proxyServer)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
 
 	err := run(&NWServer)
 	if err != nil {

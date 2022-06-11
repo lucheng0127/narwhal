@@ -1,13 +1,49 @@
 package service
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"narwhal/internal"
+	"narwhal/proto"
 	"net"
 
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
+
+func registryTargetPort(conn *Connection, targetPort int) error {
+	// Send registry packet
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.BigEndian, uint16(targetPort))
+	if err != nil {
+		return internal.NewError("Registry client", err.Error())
+	}
+
+	// New narwhal packet
+	pkt := new(proto.NWPacket)
+	pkt.Flag = proto.FLG_REG
+	pkt.Seq = conn.Key // For registry pkt Seq key have no means
+	pkt.Result = proto.RST_OK
+	pkt.SetPayload(buf.Bytes())
+	err = pkt.SetNoise()
+	if err != nil {
+		return internal.NewError("Registry client", err.Error())
+	}
+
+	pktBytes, err := pkt.Encode()
+	if err != nil {
+		return internal.NewError("Registry client", err.Error())
+	}
+
+	// Send reg pkt, if registry failed panic in handle reply
+	_, err = conn.Conn.Write(pktBytes)
+	if err != nil {
+		return internal.NewError("Registry client", err.Error())
+	}
+	log.Debugf("Send registry pkt for target port %d", targetPort)
+	return nil
+}
 
 func handleForwardConn(conn *Connection) {
 	for {
@@ -32,8 +68,6 @@ func handleForwardConn(conn *Connection) {
 }
 
 func handleClientConn(conn *Connection) error {
-	handles := getHandles("Client")
-
 	for {
 		pkt, err := fetchPkt(conn)
 		if err != nil {
@@ -44,7 +78,12 @@ func handleClientConn(conn *Connection) error {
 			break
 		}
 
-		handles[pkt.Flag](pkt)
+		switch pkt.Flag {
+		case proto.FLG_DAT:
+			handleDataClient(pkt)
+		case proto.FLG_REP:
+			handleReply(pkt)
+		}
 	}
 	return nil
 }
@@ -80,7 +119,11 @@ func RunClient(conf *internal.ClientConf) error {
 		return nil
 	})
 
-	// TODO(lucheng): Registry client with target port
+	// Registry client with target port
+	err = registryTargetPort(newConn, conf.RemotePort)
+	if err != nil {
+		return err
+	}
 
 	if err := errGup.Wait(); err != nil {
 		return err
