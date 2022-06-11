@@ -35,7 +35,7 @@ type ProxyServer struct {
 
 func handleServerConn(conn *Connection) {
 	// Read pkt from connection forever, send pkt to different handle according to flag
-	//handles := serverHandle
+	handles := getHandles("Server")
 
 	for {
 		pkt, err := fetchPkt(conn)
@@ -47,9 +47,7 @@ func handleServerConn(conn *Connection) {
 			break
 		}
 
-		go handleDataServer(pkt)
-		// TODO(lucheng): Fix nil pointer for handles
-		//go handles[pkt.Flag](pkt)
+		go handles[pkt.Flag](pkt)
 	}
 }
 

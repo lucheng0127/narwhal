@@ -11,17 +11,15 @@ import (
 
 type pktHandle func(pkt *proto.NWPacket)
 
-var serverHandle map[uint8]pktHandle
-var clientHandle map[uint8]pktHandle
-
-func init() {
-	// Init server handles
-	serverHandle := make(map[uint8]pktHandle)
-	serverHandle[proto.FLG_DAT] = handleDataServer
-
-	// Init client handles
-	clientHandle := make(map[uint8]pktHandle)
-	clientHandle[proto.FLG_DAT] = handleDataClient
+func getHandles(hType string) map[uint8]pktHandle {
+	handleMap := make(map[uint8]pktHandle)
+	switch hType {
+	case "Server":
+		handleMap[proto.FLG_DAT] = handleDataServer
+	case "Client":
+		handleMap[proto.FLG_DAT] = handleDataClient
+	}
+	return handleMap
 }
 
 // Narwhal client handlers

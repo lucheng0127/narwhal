@@ -32,7 +32,7 @@ func handleForwardConn(conn *Connection) {
 }
 
 func handleClientConn(conn *Connection) error {
-	//handles := clientHandle
+	handles := getHandles("Client")
 
 	for {
 		pkt, err := fetchPkt(conn)
@@ -44,8 +44,7 @@ func handleClientConn(conn *Connection) error {
 			break
 		}
 
-		handleDataClient(pkt)
-		//go handles[pkt.Flag](pkt)
+		handles[pkt.Flag](pkt)
 	}
 	return nil
 }
