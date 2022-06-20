@@ -36,6 +36,10 @@ func handleDataClient(pkt *proto.NWPacket) {
 	go handleForwardConn(forwardConn)
 
 	// Send pkt.Payload to conn
+	// TODO(lucheng): Send the whole traffic data to connection without split it
+	// Like ssh preauth packet, packet size large than 1024, if split it into
+	// several parts then send to ssh connection, connection will reset by peer,
+	// becaues of message authentication code incorrect
 	_, err := forwardConn.Conn.Write(pkt.Payload)
 	if err != nil {
 		log.Errorf("Send data to connection %s failed\n%s",
