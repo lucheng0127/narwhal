@@ -5,6 +5,12 @@ import (
 	"sync"
 )
 
+const (
+	C_ACTIVE  string = "Active"
+	C_CLOSED  string = "Closed"
+	C_PENDING string = "Pending"
+)
+
 var CM ConnManager
 
 func init() {
@@ -15,8 +21,9 @@ func init() {
 }
 
 type Connection struct {
-	Conn net.Conn
-	Key  uint16 // Key of connMap, set seq num as key
+	Conn   net.Conn
+	Key    uint16 // Key of connMap, set seq num as key
+	Status string
 }
 
 type Lister struct {

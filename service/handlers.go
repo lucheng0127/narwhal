@@ -59,7 +59,7 @@ func handleDataServer(pkt *proto.NWPacket) {
 	// Get conn via pkt.Seq
 	targetConn, ok := CM.ConnMap[pkt.Seq]
 	if !ok {
-		log.Error("Connection for seq %d closed", int(pkt.Seq))
+		log.Errorf("Connection for seq %d closed", int(pkt.Seq))
 		return
 	}
 

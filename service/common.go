@@ -21,6 +21,10 @@ func fetchDataToPktBytes(conn *Connection) ([]byte, error) {
 	if err != nil && err != io.EOF {
 		return nil, internal.NewError("Fetch data from proxy connection", err.Error())
 	} else if err == io.EOF {
+		CM.Mux.Lock()
+		conn.Status = C_CLOSED
+		delete(CM.ConnMap, conn.Key)
+		CM.Mux.Unlock()
 		log.Warn("Proxy connection closed")
 		return nil, nil
 	}

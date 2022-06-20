@@ -47,6 +47,9 @@ func registryTargetPort(conn *Connection, targetPort int) error {
 
 func handleForwardConn(conn *Connection) {
 	for {
+		if conn.Status == C_CLOSED {
+			panic("Connection to forward port closed, please make sure forward port is listen")
+		}
 		// Fetch data to packet
 		pktBytes, err := fetchDataToPktBytes(conn)
 		if err != nil {

@@ -78,6 +78,9 @@ func (server *NarwhalServer) launch() error {
 
 func handleProxyConn(conn *Connection) {
 	for {
+		if conn.Status == C_CLOSED {
+			break
+		}
 		// Fetch data to packet
 		pktBytes, err := fetchDataToPktBytes(conn)
 		if err != nil {
