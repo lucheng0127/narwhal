@@ -45,7 +45,7 @@ func registryTargetPort(conn *Connection, targetPort int) error {
 	return nil
 }
 
-func handleForwardConn(conn *Connection) {
+func handleForwardConn(conn *Connection, transferConn net.Conn) {
 	for {
 		if conn.Status == C_CLOSED {
 			panic("Connection to forward port closed, please make sure forward port is listen")
@@ -56,18 +56,43 @@ func handleForwardConn(conn *Connection) {
 			panic(err)
 		}
 
-		// Send to transfer connection
-		transferConn, ok := CM.TConnMap[CM.ServerAddr]
-		if !ok {
-			panic("Connection to narwhal server broken")
-		}
-
 		_, err = transferConn.Write(pktBytes)
 		if err != nil {
 			log.Errorf("Send packet bytes to transfer connection error\n%s", err.Error())
 			continue
 		}
 	}
+}
+
+func getForwardConn(seq uint16) (*Connection, error) {
+	// Get connection from pkt.Seq
+	forwardConn, ok := CM.ConnMap[seq]
+	if !ok {
+		// Create if not exist
+		// Connect to local port
+		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", CM.ClientLocalPort))
+		if err != nil {
+			return nil, internal.NewError("Connect to forward port", err.Error())
+		}
+		newConn := new(Connection)
+		newConn.Conn = conn
+		newConn.Key = seq
+		// Add connection into ConnMap
+		CM.Mux.Lock()
+		CM.ConnMap[newConn.Key] = newConn
+		CM.Mux.Unlock()
+
+		// Send to transfer connection
+		transferConn, ok := CM.TConnMap[CM.ServerAddr]
+		if !ok {
+			panic("Connection to narwhal server broken")
+		}
+
+		// Groutine: Monitor conn forever, only launch it once when it spawn
+		go handleForwardConn(newConn, transferConn)
+		return newConn, nil
+	}
+	return forwardConn, nil
 }
 
 func handleClientConn(conn *Connection) error {

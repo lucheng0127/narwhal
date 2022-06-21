@@ -78,6 +78,7 @@ func (server *NarwhalServer) launch() error {
 
 func handleProxyConn(conn *Connection) {
 	for {
+		// TODO(lucheng): Make sure packet size large then 1024 will split to several packet and send to transfer connection
 		if conn.Status == C_CLOSED {
 			break
 		}
