@@ -5,42 +5,23 @@ import (
 	"fmt"
 	"narwhal/internal"
 	"narwhal/proto"
-	"net"
 
 	log "github.com/sirupsen/logrus"
 )
 
 // Narwhal client handlers
 func handleDataClient(pkt *proto.NWPacket) {
-	// Get connection from pkt.Seq
-	_, ok := CM.ConnMap[pkt.Seq]
-	if !ok {
-		// Create if not exist
-		// Connect to local port
-		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", CM.ClientLocalPort))
-		if err != nil {
-			panic(internal.NewError("Connect to forward port", err.Error()))
-		}
-		newConn := new(Connection)
-		newConn.Conn = conn
-		newConn.Key = pkt.Seq
-		// Add connection into ConnMap
-		CM.Mux.Lock()
-		CM.ConnMap[newConn.Key] = newConn
-		CM.Mux.Unlock()
+	forwardConn, err := getForwardConn(pkt.Seq)
+	if err != nil {
+		panic(err)
 	}
-	// Reget connection
-	forwardConn := CM.ConnMap[pkt.Seq]
-
-	// Groutine: Monitor conn forever
-	go handleForwardConn(forwardConn)
 
 	// Send pkt.Payload to conn
 	// TODO(lucheng): Send the whole traffic data to connection without split it
 	// Like ssh preauth packet, packet size large than 1024, if split it into
 	// several parts then send to ssh connection, connection will reset by peer,
 	// becaues of message authentication code incorrect
-	_, err := forwardConn.Conn.Write(pkt.Payload)
+	_, err = forwardConn.Conn.Write(pkt.Payload)
 	if err != nil {
 		log.Errorf("Send data to connection %s failed\n%s",
 			forwardConn.Conn.RemoteAddr().String(), err.Error())
