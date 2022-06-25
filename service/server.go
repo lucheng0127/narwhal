@@ -5,139 +5,153 @@ import (
 	"narwhal/internal"
 	"narwhal/proto"
 	"net"
+	"runtime/debug"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 )
 
-type server interface {
-	launch() error
+type nwServer struct {
+	mux        sync.Mutex
+	port       int
+	tConnMap   map[int]net.Conn
+	pServerMap map[int]*proxyServer
+	pktChanMap map[uint16]chan *proto.NWPacket
+	pConnMap   map[uint16]net.Conn
 }
 
-func run(s server) error {
-	return s.launch()
+type proxyServer struct {
+	port   int
+	lister net.Listener
 }
 
-type NarwhalServer struct {
-	port     int
-	proxyMap map[int]*ProxyServer
-}
-
-var NWServer NarwhalServer
+var server = new(nwServer)
 
 func init() {
-	NWServer.proxyMap = make(map[int]*ProxyServer)
+	server.tConnMap = make(map[int]net.Conn)
+	server.pServerMap = make(map[int]*proxyServer)
+	server.pktChanMap = make(map[uint16]chan *proto.NWPacket)
+	server.pConnMap = make(map[uint16]net.Conn)
 }
 
-type ProxyServer struct {
-	port int
-	tKey string // Key to transfer connection for this porxy port, set it when target port registry
-}
+func handleServerConn(conn net.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("Handle connection local: %s, remote: %s error, close it\n%s",
+				conn.LocalAddr().String(), conn.RemoteAddr().String(), string(debug.Stack()))
+			conn.Close()
+			return
+		}
+	}()
 
-func handleServerConn(conn *Connection) {
 	// Read pkt from connection forever, send pkt to different handle according to flag
 	for {
-		pkt, err := fetchPkt(conn)
-		if err != nil {
-			panic(err)
-		}
-		if pkt == nil {
-			// Connection closed out loop
-			break
-		}
+		pkt := fetchPkt(conn)
 
 		switch pkt.Flag {
 		case proto.FLG_DAT:
-			go handleDataServer(pkt)
+			_, ok := server.pConnMap[pkt.Seq]
+			if !ok {
+				log.Warn(fmt.Sprintf("No connection for seq %d, drop it", int(pkt.Seq)))
+				continue
+			}
+
+			//  Append pkt to pkt chan
+			pktChan := getOrCreatePktChan(pkt.Seq)
+			pktChan <- pkt
 		case proto.FLG_REG:
 			go handleRegistry(pkt, conn)
 		}
 	}
 }
 
-func (server *NarwhalServer) launch() error {
-	lister, err := net.Listen("tcp", fmt.Sprintf(":%d", server.port))
+func (s *nwServer) launch() error {
+	lister, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
 		return internal.NewError("TCP listen error", err.Error())
 	}
-	log.Infof("Narwhal server run on port %d", server.port)
+	log.Infof("Narwhal server run on port %d", s.port)
 
 	for {
 		conn, err := lister.Accept()
 		if err != nil {
-			return err
-		}
-		newConn := new(Connection)
-		newConn.Key = newSeq()
-		newConn.Conn = conn
-
-		log.Infof("New connection to narwhal server remote: %s", newConn.Conn.RemoteAddr().String())
-		// Monitor conn and handle pkt
-		go handleServerConn(newConn)
-	}
-}
-
-func handleProxyConn(conn *Connection) {
-	for {
-		// TODO(lucheng): Make sure packet size large then 1024 will split to several packet and send to transfer connection
-		if conn.Status == C_CLOSED {
-			break
-		}
-		// Fetch data to packet
-		pktBytes, err := fetchDataToPktBytes(conn)
-		if err != nil {
-			panic(err)
-		}
-
-		// Send to transfer connection
-		proxyAddr := fmt.Sprintf(":%d", conn.Conn.LocalAddr().(*net.TCPAddr).Port)
-		transferConn, ok := CM.TConnMap[proxyAddr]
-		if !ok {
-			log.Errorf("Transfer connection for proxy %s closed", proxyAddr)
-			break
-		}
-		n, err := transferConn.Write(pktBytes)
-		if err != nil {
-			log.Errorf("Send packet bytes to transfer connection error\n%s", err.Error())
+			log.Error(internal.NewError("Establish new connection", err.Error()))
 			continue
 		}
-		log.Debugf("Send %d bytes to %s", n, transferConn.RemoteAddr().String())
+		log.Infof(fmt.Sprintf("New connection local %s remote %s established",
+			conn.LocalAddr().String(), conn.RemoteAddr().String()))
+
+		// Monitor conn and handle pkt
+		go handleServerConn(conn)
 	}
 }
 
-func (server *ProxyServer) launch() error {
-	lister, err := net.Listen("tcp", fmt.Sprintf(":%d", server.port))
+func handleProxyConn(fConn net.Conn, seq uint16, pLister net.Listener) {
+	server.mux.Lock()
+	server.pConnMap[seq] = fConn
+	server.mux.Unlock()
+
+	targetPort := fConn.LocalAddr().(*net.TCPAddr).Port
+	// Get transfer connection or close
+	tConn, ok := server.tConnMap[targetPort]
+	if !ok {
+		log.Errorf("No transfer connection for port %d, shutdown proxy sever for it", targetPort)
+		pLister.Close()
+		tConn.Close()
+		return
+	}
+	pktChan := getOrCreatePktChan(seq)
+
+	// Switch traffic
+	go switchTraffic(tConn, fConn, pktChan, seq)
+}
+
+func (s *proxyServer) launch() error {
+	// Close proxy server if error raised
+	defer func() {
+		if r := recover(); r != nil {
+			log.Panicf("Proxy server error\n", debug.Stack())
+			s.lister.Close()
+		}
+	}()
+
+	lister, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
 		return internal.NewError("Proxy listen error", err.Error())
 	}
-	log.Infof("Proxy server run on port %d", server.port)
+	s.lister = lister
+	log.Infof("Proxy server run on port %d", s.port)
 
-	for {
-		conn, err := lister.Accept()
-		if err != nil {
-			return err
+	go func() {
+		for {
+			conn, err := lister.Accept()
+			if err != nil {
+				lister.Close()
+				log.Error(internal.NewError("Establish new connection", err.Error()).Error())
+				continue
+			}
+
+			log.Infof("New connection to proxy server %d local: %s remote: %s",
+				s.port, conn.LocalAddr().String(), conn.RemoteAddr().String())
+			// Monitor conn forever read data encode it then send to transfer connection
+			// Generate new seq for connection
+			go handleProxyConn(conn, newSeq(), lister)
 		}
-		newConn := new(Connection)
-		newConn.Key = newSeq()
-		newConn.Conn = conn
-		// Add connection into ConnMap
-		CM.Mux.Lock()
-		CM.ConnMap[newConn.Key] = newConn
-		CM.Mux.Unlock()
+	}()
+	return nil
+}
 
-		log.Infof("New connection to proxy server %d remote: %s",
-			server.port, newConn.Conn.RemoteAddr().String())
-		// Monitor conn forever read data encode it then send to transfer connection
-		go handleProxyConn(newConn)
-	}
+type tcpServer interface {
+	launch() error
+}
+
+func run(server tcpServer) error {
+	return server.launch()
 }
 
 func RunServer(conf *internal.ServerConf) error {
 	log.Infof("Launch server with config: %+v", *conf)
-	NWServer.port = conf.ListenPort
+	server.port = conf.ListenPort
 
-	err := run(&NWServer)
-	if err != nil {
-		return err
-	}
-	return nil
+	return run(server)
 }

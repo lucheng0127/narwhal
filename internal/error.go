@@ -21,10 +21,11 @@ func (err *TransferConnNotExist) Error() string {
 }
 
 func IsConnClosed(err error) bool {
-	if strings.Contains(err.Error(), "Transfer connection not exist, maybe closed") {
-		return true
-	}
-	return false
+	return strings.Contains(err.Error(), "Transfer connection not exist, maybe closed")
+}
+
+func IsPortInUsed(err error) bool {
+	return strings.Contains(err.Error(), "address already in use")
 }
 
 func NewError(op, msg string) *NarwhalError {
