@@ -7,12 +7,30 @@ import (
 	"narwhal/internal"
 	"narwhal/proto"
 	"net"
+	"runtime/debug"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 )
 
-func registryTargetPort(conn *Connection, targetPort int) error {
+type nwClient struct {
+	mux        sync.Mutex
+	lPort      int
+	rPort      int
+	serverAddr string
+	pktChanMap map[uint16]chan *proto.NWPacket
+	fConnMap   map[uint16]net.Conn
+	tConn      net.Conn
+}
+
+var client nwClient
+
+func init() {
+	client.pktChanMap = make(map[uint16]chan *proto.NWPacket)
+	client.fConnMap = make(map[uint16]net.Conn)
+}
+
+func registryTargetPort(conn net.Conn, targetPort int) error {
 	// Send registry packet
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.BigEndian, uint16(targetPort))
@@ -23,7 +41,7 @@ func registryTargetPort(conn *Connection, targetPort int) error {
 	// New narwhal packet
 	pkt := new(proto.NWPacket)
 	pkt.Flag = proto.FLG_REG
-	pkt.Seq = conn.Key // For registry pkt Seq key have no means
+	pkt.Seq = newSeq()
 	pkt.Result = proto.RST_OK
 	pkt.SetPayload(buf.Bytes())
 	err = pkt.SetNoise()
@@ -37,7 +55,7 @@ func registryTargetPort(conn *Connection, targetPort int) error {
 	}
 
 	// Send reg pkt, if registry failed panic in handle reply
-	_, err = conn.Conn.Write(pktBytes)
+	_, err = conn.Write(pktBytes)
 	if err != nil {
 		return internal.NewError("Registry client", err.Error())
 	}
@@ -45,116 +63,80 @@ func registryTargetPort(conn *Connection, targetPort int) error {
 	return nil
 }
 
-func handleForwardConn(conn *Connection, transferConn net.Conn) {
-	for {
-		if conn.Status == C_CLOSED {
-			panic("Connection to forward port closed, please make sure forward port is listen")
-		}
-		// Fetch data to packet
-		pktBytes, err := fetchDataToPktBytes(conn)
-		if err != nil {
-			panic(err)
-		}
-
-		_, err = transferConn.Write(pktBytes)
-		if err != nil {
-			log.Errorf("Send packet bytes to transfer connection error\n%s", err.Error())
-			continue
-		}
+func getOrNewConn(seq uint16) net.Conn {
+	conn, ok := client.fConnMap[seq]
+	if ok {
+		return conn
 	}
+
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", client.lPort))
+	if err != nil {
+		panic(fmt.Sprintf("Conect to local port %d\n%s", client.lPort, err.Error()))
+	}
+
+	return conn
 }
 
-func getForwardConn(seq uint16) (*Connection, error) {
-	// Get connection from pkt.Seq
-	forwardConn, ok := CM.ConnMap[seq]
-	if !ok {
-		// Create if not exist
-		// Connect to local port
-		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", CM.ClientLocalPort))
-		if err != nil {
-			return nil, internal.NewError("Connect to forward port", err.Error())
-		}
-		newConn := new(Connection)
-		newConn.Conn = conn
-		newConn.Key = seq
-		// Add connection into ConnMap
-		CM.Mux.Lock()
-		CM.ConnMap[newConn.Key] = newConn
-		CM.Mux.Unlock()
+func handleSeqClient(seq uint16) {
+	// Get or create connection to local port
+	fConn := getOrNewConn(seq)
+	pktChan := getOrCreatePktChan(seq)
 
-		// Send to transfer connection
-		transferConn, ok := CM.TConnMap[CM.ServerAddr]
-		if !ok {
-			panic("Connection to narwhal server broken")
-		}
-
-		// Groutine: Monitor conn forever, only launch it once when it spawn
-		go handleForwardConn(newConn, transferConn)
-		return newConn, nil
-	}
-	return forwardConn, nil
+	// Switch traffic
+	go switchTraffic(client.tConn, fConn, pktChan, seq)
 }
 
-func handleClientConn(conn *Connection) error {
+func handleClientConn(conn net.Conn, wg sync.WaitGroup) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Panicf("Client error\n", string(debug.Stack()))
+			wg.Done()
+		}
+	}()
+
 	for {
-		pkt, err := fetchPkt(conn)
-		if err != nil {
-			return err
-		}
-		if pkt == nil {
-			// Connection closed out loop
-			break
-		}
+		pkt := fetchPkt(conn)
 
 		switch pkt.Flag {
 		case proto.FLG_DAT:
-			handleDataClient(pkt)
+			go handleSeqClient(pkt.Seq)
+
+			// Get or create pktChan
+			pktChan := getOrCreatePktChan(pkt.Seq)
+
+			// Append pkt to pktChan
+			pktChan <- pkt
 		case proto.FLG_REP:
 			handleReply(pkt)
 		}
 	}
-	return nil
 }
 
 func RunClient(conf *internal.ClientConf) error {
 	// Connection to narwhal
-	serverAddr := fmt.Sprintf("%s:%d", conf.RemoteAddr, conf.ServerPort)
-	conn, err := net.Dial("tcp", serverAddr)
+	var wg sync.WaitGroup
+	client.lPort = conf.LocalPort
+	client.rPort = conf.RemotePort
+	client.serverAddr = fmt.Sprintf("%s:%d", conf.RemoteAddr, conf.ServerPort)
+
+	conn, err := net.Dial("tcp", client.serverAddr)
 	if err != nil {
 		return internal.NewError("Connect to narwhal server error", err.Error())
 	}
-	CM.ClientLocalPort = conf.LocalPort
-	CM.ServerAddr = conn.RemoteAddr().String()
-	newConn := new(Connection)
-	newConn.Conn = conn
-	newConn.Key = newSeq()
-	// No need send conn to ConnMap
-
-	// Set TConnMap, serverAddr as key
-	CM.Mux.Lock()
-	CM.TConnMap[conn.RemoteAddr().String()] = conn
-	CM.Mux.Unlock()
-	errGup := new(errgroup.Group)
-	log.Infof("New connection to %s local %s",
-		newConn.Conn.RemoteAddr().String(), newConn.Conn.LocalAddr().String())
+	client.tConn = conn
+	log.Infof("Connect to server local: %s, remote: %s",
+		client.tConn.LocalAddr().String(), client.tConn.RemoteAddr().String())
 
 	// Groutine: Monitor conn and handle pkt
-	errGup.Go(func() error {
-		err := handleClientConn(newConn)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	go handleClientConn(client.tConn, wg)
+	wg.Add(1)
 
 	// Registry client with target port
-	err = registryTargetPort(newConn, conf.RemotePort)
+	err = registryTargetPort(client.tConn, client.rPort)
 	if err != nil {
 		return err
 	}
 
-	if err := errGup.Wait(); err != nil {
-		return err
-	}
+	wg.Wait()
 	return nil
 }

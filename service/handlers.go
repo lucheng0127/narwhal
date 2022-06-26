@@ -5,95 +5,62 @@ import (
 	"fmt"
 	"narwhal/internal"
 	"narwhal/proto"
+	"net"
 
 	log "github.com/sirupsen/logrus"
 )
 
-// Narwhal client handlers
-func handleDataClient(pkt *proto.NWPacket) {
-	forwardConn, err := getForwardConn(pkt.Seq)
-	if err != nil {
-		panic(err)
-	}
-
-	// Send pkt.Payload to conn
-	// TODO(lucheng): Send the whole traffic data to connection without split it
-	// Like ssh preauth packet, packet size large than 1024, if split it into
-	// several parts then send to ssh connection, connection will reset by peer,
-	// becaues of message authentication code incorrect
-	_, err = forwardConn.Conn.Write(pkt.Payload)
-	if err != nil {
-		log.Errorf("Send data to connection %s failed\n%s",
-			forwardConn.Conn.RemoteAddr().String(), err.Error())
-	}
-}
-
 func handleReply(pkt *proto.NWPacket) {
 	switch pkt.Result {
 	case proto.RST_OK:
-		log.Infof("Registry port %d succeed", CM.ClientLocalPort)
+		log.Infof("Registry port %d succeed", client.rPort)
 		return
+	case proto.PORT_INUSE:
+		eMsg := fmt.Sprintf("Registry port %d failed, port used", client.rPort)
+		panic(eMsg)
 	default:
-		eMsg := fmt.Sprintf("Registry port %d failed", CM.ClientLocalPort)
+		eMsg := fmt.Sprintf("Registry port %d failed", client.rPort)
 		panic(eMsg)
 	}
 }
 
-// Narwhal server handlers
-func handleDataServer(pkt *proto.NWPacket) {
-	// Get conn via pkt.Seq
-	targetConn, ok := CM.ConnMap[pkt.Seq]
-	if !ok {
-		log.Errorf("Connection for seq %d closed", int(pkt.Seq))
-		return
-	}
-
-	// Send pkt.Payload to conn
-	n, err := targetConn.Conn.Write(pkt.Payload)
-	if err != nil {
-		log.Error("Send data to connection %s failed\n%s",
-			targetConn.Conn.RemoteAddr().String(), err.Error())
-	}
-	log.Debugf("Send %d bytes data to connection %s",
-		n, targetConn.Conn.RemoteAddr().String())
-}
-
-func handleRegistry(pkt *proto.NWPacket, conn *Connection) {
+func handleRegistry(pkt *proto.NWPacket, conn net.Conn) {
 	targetPort := int(binary.BigEndian.Uint16(pkt.Payload))
 
 	// Launch proxy server
-	proxyServer := new(ProxyServer)
-	proxyServer.port = targetPort
-	NWServer.proxyMap[targetPort] = proxyServer
+	pServer := new(proxyServer)
+	pServer.port = targetPort
+	server.mux.Lock()
+	server.pServerMap[targetPort] = pServer
+	server.tConnMap[targetPort] = conn
+	server.mux.Unlock()
 
-	go run(proxyServer)
+	err := run(pServer)
 
 	// New reply pkt and send back
 	repPkt := new(proto.NWPacket)
 	repPkt.Flag = proto.FLG_REP
-	repPkt.Seq = conn.Key
-	repPkt.Result = proto.RST_OK
+	repPkt.Seq = pkt.Seq
+	if err == nil {
+		repPkt.Result = proto.RST_OK
+	} else if internal.IsPortInUsed(err) {
+		repPkt.Result = proto.PORT_INUSE
+	} else {
+		repPkt.Result = proto.RST_ERR
+	}
 	repPkt.SetPayload(pkt.Payload)
-	err := pkt.SetNoise()
+	err = pkt.SetNoise()
 	if err != nil {
 		panic(internal.NewError("Reply regisgtry", err.Error()))
 	}
-	// Store transfer connection for target port
-	CM.Mux.Lock()
-	CM.TConnMap[fmt.Sprintf(":%d", targetPort)] = conn.Conn
-	CM.Mux.Unlock()
 
 	repPktBytes, err := repPkt.Encode()
 	if err != nil {
 		panic(internal.NewError("Reply regisgtry", err.Error()))
 	}
-	_, err = conn.Conn.Write(repPktBytes)
+	_, err = conn.Write(repPktBytes)
 	if err != nil {
 		panic(internal.NewError("Reply regisgtry", err.Error()))
 	}
 	log.Infof("Send reply packet for target port %d", targetPort)
 }
-
-// Narwhal client handlers
-
-// Proxy server handlers

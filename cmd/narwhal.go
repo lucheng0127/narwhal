@@ -38,10 +38,9 @@ func main() {
 	// Launch service
 	switch conf := iconf.(type) {
 	case *internal.ServerConf:
-		err := service.RunServer(conf)
-		checkErr(err)
+		err = service.RunServer(conf)
 	case *internal.ClientConf:
-		err := service.RunClient(conf)
-		checkErr(err)
+		err = service.RunClient(conf)
 	}
+	checkErr(err)
 }
