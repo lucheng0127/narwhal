@@ -17,7 +17,7 @@ func newSeq() uint16 {
 func fetchDataToPktBytes(conn net.Conn, seq uint16) ([]byte, error) {
 	// Read data from connection
 	buf := make([]byte, proto.PayloadBufSize)
-	_, err := conn.Read(buf)
+	n, err := conn.Read(buf)
 	if err != nil {
 		return nil, internal.NewError("Fetch data from proxy connection", err.Error())
 	}
@@ -27,7 +27,7 @@ func fetchDataToPktBytes(conn net.Conn, seq uint16) ([]byte, error) {
 	pkt.Flag = proto.FLG_DAT
 	pkt.Seq = seq
 	pkt.Result = proto.RST_OK
-	pkt.SetPayload(buf)
+	pkt.SetPayload(buf[:n])
 	err = pkt.SetNoise()
 	if err != nil {
 		return nil, err
@@ -44,13 +44,13 @@ func fetchDataToPktBytes(conn net.Conn, seq uint16) ([]byte, error) {
 func fetchPkt(conn net.Conn) *proto.NWPacket {
 	// Read data from connection
 	buf := make([]byte, proto.BufSize)
-	_, err := conn.Read(buf)
+	n, err := conn.Read(buf)
 	if err != nil {
 		panic(internal.NewError("Fetch packet from connection", err.Error()))
 	}
 
 	// Decode
-	pkt, err := proto.Decode(buf)
+	pkt, err := proto.Decode(buf[:n])
 	if err != nil {
 		panic(err)
 	}
