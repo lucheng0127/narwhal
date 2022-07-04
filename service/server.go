@@ -16,6 +16,7 @@ type nwServer struct {
 	port       int
 	tConnMap   map[int]net.Conn
 	pServerMap map[int]*proxyServer
+        //TODO(lucheng): make sure pkt orderly entry channel
 	pktChanMap map[uint16]chan *proto.NWPacket
 	pConnMap   map[uint16]net.Conn
 }
