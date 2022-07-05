@@ -83,13 +83,14 @@ func handleSeqClient(seq uint16) {
 	pktChan := getOrCreatePktChan(seq)
 
 	// Switch traffic
-	go switchTraffic(client.tConn, fConn, pktChan, seq)
+	switchTraffic(client.tConn, fConn, pktChan, seq)
 }
 
 func handleClientConn(conn net.Conn, wg sync.WaitGroup) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Panicf("Client error\n", string(debug.Stack()))
+			conn.Close()
 			wg.Done()
 		}
 	}()

@@ -16,7 +16,7 @@ type nwServer struct {
 	port       int
 	tConnMap   map[int]net.Conn
 	pServerMap map[int]*proxyServer
-        //TODO(lucheng): make sure pkt orderly entry channel
+	//TODO(lucheng): make sure pkt orderly entry channel
 	pktChanMap map[uint16]chan *proto.NWPacket
 	pConnMap   map[uint16]net.Conn
 }
@@ -104,7 +104,7 @@ func handleProxyConn(fConn net.Conn, seq uint16, pLister net.Listener) {
 	pktChan := getOrCreatePktChan(seq)
 
 	// Switch traffic
-	go switchTraffic(tConn, fConn, pktChan, seq)
+	switchTraffic(tConn, fConn, pktChan, seq)
 }
 
 func (s *proxyServer) launch() error {
