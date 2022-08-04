@@ -32,7 +32,7 @@ type Lister struct {
 }
 
 type ConnManager struct {
-	Mux     sync.Mutex
+	Mux     sync.RWMutex
 	ConnMap map[uint16]*Connection
 	LisMap  map[uint16]*Lister
 	// For server use the LocalAddr port as key when listen target port,

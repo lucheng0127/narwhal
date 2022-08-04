@@ -12,7 +12,7 @@ import (
 )
 
 type nwServer struct {
-	mux        sync.Mutex
+	mux        sync.RWMutex
 	port       int
 	tConnMap   map[int]net.Conn
 	pServerMap map[int]*proxyServer

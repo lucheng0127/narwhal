@@ -43,8 +43,8 @@ func main() {
 
 	// Forward traffic
 	var wg sync.WaitGroup
+	wg.Add(2)
 	go forwardTraffic(transferPort, forwardPort)
 	go forwardTraffic(forwardPort, transferPort)
-	wg.Add(2)
 	wg.Wait()
 }

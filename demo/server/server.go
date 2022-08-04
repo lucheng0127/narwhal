@@ -49,8 +49,8 @@ func main() {
 
 	// Forward traffic between two connection
 	var wg sync.WaitGroup
+	wg.Add(2)
 	go forwardTraffic(transferPort, forwardPort)
 	go forwardTraffic(forwardPort, transferPort)
-	wg.Add(2)
 	wg.Wait()
 }

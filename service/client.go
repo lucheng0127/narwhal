@@ -14,7 +14,7 @@ import (
 )
 
 type nwClient struct {
-	mux        sync.Mutex
+	mux        sync.RWMutex
 	lPort      int
 	rPort      int
 	serverAddr string
@@ -86,7 +86,7 @@ func handleSeqClient(seq uint16) {
 	switchTraffic(client.tConn, fConn, pktChan, seq)
 }
 
-func handleClientConn(conn net.Conn, wg sync.WaitGroup) {
+func handleClientConn(conn net.Conn, wg *sync.WaitGroup) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Panicf("Client error\n", string(debug.Stack()))
@@ -129,8 +129,8 @@ func RunClient(conf *internal.ClientConf) error {
 		client.tConn.LocalAddr().String(), client.tConn.RemoteAddr().String())
 
 	// Groutine: Monitor conn and handle pkt
-	go handleClientConn(client.tConn, wg)
 	wg.Add(1)
+	go handleClientConn(client.tConn, &wg)
 
 	// Registry client with target port
 	err = registryTargetPort(client.tConn, client.rPort)
