@@ -1,46 +1,80 @@
 package main
 
 import (
-	"flag"
-	"narwhal/internal"
-	"narwhal/service"
+	"context"
+	"fmt"
 	"os"
+	"os/signal"
+	"runtime"
+	"syscall"
 
-	log "github.com/sirupsen/logrus"
+	flags "github.com/jessevdk/go-flags"
+	"github.com/lucheng0127/narwhal/internal/pkg/config"
+	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
+	"github.com/lucheng0127/narwhal/internal/pkg/utils"
+	"github.com/lucheng0127/narwhal/internal/pkg/version"
+	"github.com/lucheng0127/narwhal/pkg/server"
+	"github.com/sirupsen/logrus"
 )
 
-func checkErr(err error) {
+func main() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	// Parse command line arguments
+	var opts struct {
+		ConfigFile string `short:"f" long:"config-file" description:"config file" default:"/etc/narwhal/config.yaml"`
+		ConfigType string `short:"t" long:"config-type" description:"config file type(toml, yaml, json)" default:"yaml"`
+		LogLevel   string `short:"l" long:"log-level" description:"log level"`
+		Version    bool   `long:"version" description:"show version info"`
+	}
+	_, err := flags.Parse(&opts)
 	if err != nil {
-		log.Panic(err)
 		os.Exit(1)
 	}
-}
 
-func registrySingal() error {
-	// TODO(lucheng): Handle sigint sigkill sighup sigterm, send FLG_FIN to close tcp connection
-	return nil
-}
-
-func main() {
-	//Parse command line parms and config file
-	confFile := flag.String("config", "/etc/narwhal/narwhal.yaml", "Narwhal confige file")
-	debug := flag.Bool("debug", false, "Show debug info, default False")
-	flag.Parse()
-	iconf, debug_enable, err := internal.ParseConfig(*confFile)
-	checkErr(err)
-
-	// Setup logger
-	internal.NewLogger(debug_enable || *debug)
-
-	// Handle signal
-	checkErr(registrySingal())
-
-	// Launch service
-	switch conf := iconf.(type) {
-	case *internal.ServerConf:
-		err = service.RunServer(conf)
-	case *internal.ClientConf:
-		err = service.RunClient(conf)
+	if opts.Version {
+		fmt.Println("Narwhal version ", version.Version())
+		os.Exit(0)
 	}
-	checkErr(err)
+
+	// Set log
+	switch opts.LogLevel {
+	case "debug":
+		logger.SetLevel(logrus.DebugLevel)
+	case "warn":
+		logger.SetLevel(logrus.WarnLevel)
+	case "info":
+		logger.SetLevel(logrus.InfoLevel)
+	default:
+		logger.SetLevel(logrus.InfoLevel)
+	}
+
+	ctx := context.Background()
+	ctx = utils.NewTraceContext(ctx)
+	// Parse config file
+	conf, err := config.ReadConfigFile(opts.ConfigFile, opts.ConfigType)
+	if err != nil {
+		logger.Error(ctx, err.Error())
+		os.Exit(1)
+	}
+
+	// Launch server
+	s := server.NewServer(server.ListenPort(conf.Port))
+	if s == nil {
+		logger.Error(ctx, "Create server failed")
+		os.Exit(1)
+	}
+	go s.Launch()
+	logger.Info(ctx, "Narwhal server started")
+
+	// Exist with signal
+	<-sigCh
+	stopServer(ctx, s)
+}
+
+func stopServer(ctx context.Context, s *server.Server) {
+	logger.Info(ctx, "Stopping narwhal server")
+	s.Stop()
 }

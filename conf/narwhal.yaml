@@ -1,4 +1,0 @@
-mode: server
-debug: false
-server:
-  port: 7023
