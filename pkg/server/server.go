@@ -3,21 +3,11 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 
 	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
+	"github.com/lucheng0127/narwhal/internal/pkg/utils"
 )
-
-type options struct {
-	port int
-}
-
-type ServerOption func(*options)
-
-func ListenPort(port int) ServerOption {
-	return func(o *options) {
-		o.port = port
-	}
-}
 
 type Server struct {
 	port int
@@ -25,23 +15,48 @@ type Server struct {
 
 func NewServer(opt ...ServerOption) *Server {
 	server := new(Server)
-	opts := new(options)
 	for _, o := range opt {
-		o(opts)
+		o(server)
 	}
 
 	ctx := context.Background()
-	if opts.port == 0 {
+	if server.port == 0 {
 		logger.Error(ctx, "Port not configured")
 		return nil
 	}
-	server.port = opts.port
 	return server
 }
 
+func (s *Server) Serve(l net.Listener) error {
+	defer l.Close()
+
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return err
+		}
+
+		// Handle connection
+		go s.HandleConn(conn)
+	}
+}
+
 func (s *Server) Launch() {
-	fmt.Println("Launched")
+	ctx := utils.NewTraceContext()
+
+	// Listen port
+	l, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	if err != nil {
+		logger.Error(ctx, err.Error())
+		s.Stop()
+	}
+
+	// Run socks5 server
+	if err = s.Serve(l); err != nil {
+		logger.Painc(ctx, err.Error())
+	}
 }
 
 func (s *Server) Stop() {
+	// TODO(shawnlu): Implement it
 }

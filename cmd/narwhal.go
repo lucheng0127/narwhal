@@ -51,8 +51,7 @@ func main() {
 		logger.SetLevel(logrus.InfoLevel)
 	}
 
-	ctx := context.Background()
-	ctx = utils.NewTraceContext(ctx)
+	ctx := utils.NewTraceContext()
 	// Parse config file
 	conf, err := config.ReadConfigFile(opts.ConfigFile, opts.ConfigType)
 	if err != nil {

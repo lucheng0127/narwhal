@@ -18,7 +18,12 @@ func genUUID() string {
 	return uuid
 }
 
-func NewTraceContext(ctx context.Context) context.Context {
+func AddContextTraceID(ctx context.Context) context.Context {
 	traceID := genUUID()
 	return context.WithValue(ctx, log.MSG_ID, traceID)
+}
+
+func NewTraceContext() context.Context {
+	ctx := context.Background()
+	return AddContextTraceID(ctx)
 }
