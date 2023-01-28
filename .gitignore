@@ -1,4 +1,5 @@
 .vscode
-narwhal
+build
+cover
 demo/server/server
 demo/client/client
