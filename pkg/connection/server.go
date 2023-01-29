@@ -1,6 +1,8 @@
 package connection
 
 import (
+	"context"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"runtime/debug"
@@ -17,7 +19,8 @@ type SConn struct {
 	Ready       chan bool    // After Receive
 	ln          net.Listener // Listener of bind port
 	conn        net.Conn
-	proxyConnCh chan net.Conn // Connection used to port forwarding
+	ProxyConnCh chan net.Conn // Connection used to port forwarding
+	ProxyConn   bool
 }
 
 func NewServerConnection(conn net.Conn) *SConn {
@@ -26,11 +29,41 @@ func NewServerConnection(conn net.Conn) *SConn {
 		BindPort:    -1,
 		UID:         "",
 		Ready:       make(chan bool, 1),
-		proxyConnCh: make(chan net.Conn, 1)}
+		ProxyConnCh: make(chan net.Conn, 1),
+		ProxyConn:   false}
 }
 
-func (c *SConn) Auth() {
+func (c *SConn) Auth(ctx context.Context, pkg protocol.PKG) {
+	// Set payload to UID
+	c.UID = string(pkg.GetPayload())
+}
 
+func (c *SConn) Bind(ctx context.Context, pkg protocol.PKG) {
+	// Set payload to BindPort
+	c.BindPort = int(binary.BigEndian.Uint16(pkg.GetPayload()))
+
+	// Send true to Ready in the last
+	c.Ready <- true
+}
+
+func (c *SConn) NewConn(ctx context.Context, pkg protocol.PKG) {
+	c.AuthCtx = string(pkg.GetPayload())
+
+	c.ProxyConn = true
+	// Send true to Ready in the last
+	c.Ready <- true
+}
+
+func (c *SConn) GetUID() string {
+	return c.UID
+}
+
+func (c *SConn) SetAuthCtx(authCtx string) {
+	c.AuthCtx = authCtx
+}
+
+func (c *SConn) GetBindPort() int {
+	return c.BindPort
 }
 
 func (c *SConn) Notify() {
@@ -42,13 +75,53 @@ func (c *SConn) Close() {
 	c.ReplayWithCode(protocol.RepConnClose)
 }
 
+func (c *SConn) ShouldProxy() bool {
+	return !c.ProxyConn
+}
+
 func (c *SConn) ReplayWithCode(code byte) {
 	// TODO(shawnlu): Send close connection to connection
 }
 
-func (c *SConn) ReplayWithAuthCtx() {}
+func (c *SConn) ReplayWithAuthCtx() {
+	// TODO(shawnlu): Implement it
+}
 
-func (c *SConn) Serve() {}
+func (c *SConn) Serve(ctx context.Context) {
+	for {
+		if c.ProxyConn {
+			// ProxyConn use to proxy do not serve
+			break
+		}
+
+		// Parse request method
+		var pkg protocol.PKG = protocol.NewRequestMethod()
+		err := pkg.Parse(ctx, c.conn)
+		if err != nil {
+			logger.Error(ctx, err.Error())
+		}
+
+		// Handle request method, after auth and bind, send true to channel ready
+		c.HandleMethod(ctx, pkg)
+	}
+}
+
+// When connection cmd is CmdNewConn, it means this connection no need auth
+// it's a proxy connection, should end of connection.Serve
+func (c *SConn) HandleMethod(ctx context.Context, pkg protocol.PKG) {
+
+	cmd := pkg.GetCmd()
+	switch cmd {
+	case protocol.CmdAuth:
+		c.Auth(ctx, pkg)
+	case protocol.CmdBind:
+		c.Bind(ctx, pkg)
+	case protocol.CmdClose:
+		c.conn.Close()
+	case protocol.CmdNewConn:
+		c.NewConn(ctx, pkg)
+	}
+}
 
 func (c *SConn) forwarding(sConn, tConn net.Conn) {
 	defer func() {
@@ -67,6 +140,10 @@ func (c *SConn) forwarding(sConn, tConn net.Conn) {
 }
 
 func (c *SConn) Proxy() {
+	if c.ln == nil {
+		return
+	}
+
 	defer c.ln.Close()
 	ctx := utils.NewTraceContext()
 	logger.Info(ctx, fmt.Sprintf("Start to serve %s\n", c.ln.Addr().String()))
@@ -81,7 +158,7 @@ func (c *SConn) Proxy() {
 		// Tell client this a new connection establised, client will
 		c.Notify()
 
-		tConn := <-c.proxyConnCh
+		tConn := <-c.ProxyConnCh
 		go c.forwarding(conn, tConn)
 	}
 }

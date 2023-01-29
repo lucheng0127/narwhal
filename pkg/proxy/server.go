@@ -34,31 +34,71 @@ func (s *ProxyServer) ServeConn(conn connection.Connection) {
 	}()
 
 	ctx := utils.NewTraceContext()
-	go conn.Serve()
+	go conn.Serve(ctx)
 
-	// Wait client send auth and bind cmd
+	// Wait client send auth and bind cmd, if proxy connection,
+	// will send CmdNewConn cmd, after handle it will also send true to ready
 	<-conn.(*connection.SConn).Ready
 
+	if !conn.ShouldProxy() {
+		// There are two kind of connection, authed connection and proxy connection
+		// authed connection: is the first connection that server and client establish,
+		// use it auth, bind port
+		// proxy connection: when a new connection establish to server binding port,
+		// server will notify client this a new connection, client will establish a
+		// new connection to local target port, after that client will make a new connection
+		// with server, when connection establish send server a CmdNewConn, then start proxy
+		return
+	}
+
 	// Auth
-	if !s.Auth(conn.(*connection.SConn).UID) {
+	if !s.Auth(conn.GetUID()) {
 		logger.Error(ctx, "client auth failed after 5 times retry, close connection")
 		conn.ReplayWithCode(protocol.RepAuthFailed)
 		conn.Close()
 	}
 	// Generate auth ctx
 	authctx := uuid.NewV4().String()
-	conn.(*connection.SConn).AuthCtx = authctx
+	conn.SetAuthCtx(authctx)
 	s.authedConn[authctx] = conn
 	conn.ReplayWithAuthCtx()
 
 	// Check port validate
-	if !s.AvailabledPort(conn.(*connection.SConn).BindPort) {
+	if !s.AvailabledPort(conn.GetBindPort()) {
 		logger.Error(ctx, "not premmited binding port")
 		conn.ReplayWithCode(protocol.RepInvalidPort)
 		conn.Close()
 	}
 	// Bind port and proxy
 	go conn.Proxy()
+}
+
+// Get proxy connection from GConnPool then send it to connection.ProxyConnCh
+//
+// proxy connection:
+//
+//	when a new connection establish will send server cmd CmdNewConn,
+//	with authCtx as payload, server use payload get authed connection
+//	and send new connection to authed connection.ProxyConnCh.
+//	authed connection will do proxy with this new connection
+func (s *ProxyServer) Monitor() {
+	ctx := utils.NewTraceContext()
+	for {
+		authCtx := <-connection.GConnPool.Pool
+		proxyConn, ok := connection.GConnPool.PoolMap[authCtx]
+		if !ok {
+			logger.Warn(ctx, fmt.Sprintf("no such connection in GConnPool with key [%s]\n", authCtx))
+			continue
+		}
+
+		authedConn, ok := s.authedConn[authCtx]
+		if !ok {
+			logger.Warn(ctx, fmt.Sprintf("no auth connection with contex [%s]\n", authCtx))
+			continue
+		}
+
+		authedConn.(*connection.SConn).ProxyConnCh <- proxyConn
+	}
 }
 
 func (s *ProxyServer) Serve(ln net.Listener) error {

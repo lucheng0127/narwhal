@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"context"
 	"fmt"
@@ -77,3 +78,4 @@ func stopServer(ctx context.Context, s *server.Server) {
 	logger.Info(ctx, "Stopping narwhal server")
 	s.Stop()
 }
+*/
