@@ -1,12 +1,15 @@
 package protocol
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"net"
 
 	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
+	"github.com/lucheng0127/narwhal/internal/pkg/utils"
 )
 
 // Request:
@@ -18,17 +21,24 @@ import (
 // bind: 0x8d
 // new connection: 0x8b
 // close: 0x87
+// reply auth ctx: 0x89
+// reply code: 0x88
 //
 // auth payload length 16 byte
 // bind payload length 2 byte
 // new connection payload length 16 byte, key of authedConn
+// reply autx ctx payload length 16 byte
+// reply code payload length 1 byte
 
 const (
 	// cmds
-	CmdAuth    = byte(0x8e)
-	CmdBind    = byte(0x8d)
-	CmdNewConn = byte(0x8b)
-	CmdClose   = byte(0x87)
+	CmdNone         = byte(0xcf)
+	CmdAuth         = byte(0x8e)
+	CmdBind         = byte(0x8d)
+	CmdNewConn      = byte(0x8b)
+	CmdClose        = byte(0x87)
+	CmdReplyAuthCtx = byte(0x89)
+	CmdReplyCode    = byte(0x88)
 
 	// response code
 	RepInvalidCmd  = byte(0xff)
@@ -39,25 +49,38 @@ const (
 
 type PKG interface {
 	Parse(ctx context.Context, conn net.Conn) error
+	Encode() ([]byte, error)
 	GetCmd() byte
 	GetPayload() []byte
 }
 
 type RequestMethod struct {
-	Cmd     byte
+	cmd     byte
 	payload []byte
 }
 
-func NewRequestMethod() *RequestMethod {
-	return new(RequestMethod)
+func NewRequestMethod(cmd byte, payload []byte) *RequestMethod {
+	return &RequestMethod{cmd: cmd, payload: payload}
 }
 
 func (req *RequestMethod) GetCmd() byte {
-	return req.Cmd
+	return req.cmd
 }
 
 func (req *RequestMethod) GetPayload() []byte {
 	return req.payload
+}
+
+func (req *RequestMethod) Encode() ([]byte, error) {
+	ctx := utils.NewTraceContext()
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(req)
+	if err != nil {
+		logger.Error(ctx, fmt.Sprintf("encode request method cmd %s", err.Error()))
+		return buf.Bytes(), err
+	}
+	return buf.Bytes(), nil
 }
 
 func (req *RequestMethod) Parse(ctx context.Context, conn net.Conn) error {
@@ -72,12 +95,14 @@ func (req *RequestMethod) Parse(ctx context.Context, conn net.Conn) error {
 	// Parse method payload
 	payloadLen := 0
 	switch methodBuf[0] {
-	case CmdAuth:
+	case CmdAuth, CmdNewConn, CmdReplyAuthCtx:
 		payloadLen = 16
 	case CmdBind:
 		payloadLen = 2
 	case CmdClose:
 		payloadLen = 0
+	case CmdReplyCode:
+		payloadLen = 1
 	default:
 		logger.Error(ctx, "unsupport request method")
 		return errors.New("unsupport request method")
@@ -95,7 +120,7 @@ func (req *RequestMethod) Parse(ctx context.Context, conn net.Conn) error {
 	}
 
 	// Format req struct with methodBuf and payloadBuf
-	req.Cmd = methodBuf[0]
+	req.cmd = methodBuf[0]
 	req.payload = payloadBuf
 	return nil
 }

@@ -54,20 +54,20 @@ func (s *ProxyServer) ServeConn(conn connection.Connection) {
 	// Auth
 	if !s.Auth(conn.GetUID()) {
 		logger.Error(ctx, "client auth failed after 5 times retry, close connection")
-		conn.ReplayWithCode(protocol.RepAuthFailed)
-		conn.Close()
+		err := conn.ReplayWithCode(ctx, protocol.RepAuthFailed)
+		panic(err)
 	}
 	// Generate auth ctx
 	authctx := uuid.NewV4().String()
 	conn.SetAuthCtx(authctx)
 	s.authedConn[authctx] = conn
-	conn.ReplayWithAuthCtx()
+	conn.ReplayWithAuthCtx(ctx, authctx)
 
 	// Check port validate
 	if !s.AvailabledPort(conn.GetBindPort()) {
 		logger.Error(ctx, "not premmited binding port")
-		conn.ReplayWithCode(protocol.RepInvalidPort)
-		conn.Close()
+		err := conn.ReplayWithCode(ctx, protocol.RepInvalidPort)
+		panic(err)
 	}
 	// Bind port and proxy
 	go conn.Proxy()

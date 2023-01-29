@@ -35,8 +35,8 @@ type Connection interface {
 	Serve(ctx context.Context)
 	Proxy()
 	Close()
-	ReplayWithCode(code byte)
-	ReplayWithAuthCtx()
+	ReplayWithCode(ctx context.Context, code byte) error
+	ReplayWithAuthCtx(ctx context.Context, authCtx string) error
 	ShouldProxy() bool
 	SetAuthCtx(string)
 	GetUID() string

@@ -72,19 +72,46 @@ func (c *SConn) Notify() {
 
 func (c *SConn) Close() {
 	defer c.conn.Close()
-	c.ReplayWithCode(protocol.RepConnClose)
+	ctx := utils.NewTraceContext()
+	c.ReplayWithCode(ctx, protocol.RepConnClose)
 }
 
 func (c *SConn) ShouldProxy() bool {
 	return !c.ProxyConn
 }
 
-func (c *SConn) ReplayWithCode(code byte) {
-	// TODO(shawnlu): Send close connection to connection
+func (c *SConn) ReplayWithCode(ctx context.Context, code byte) error {
+	payload := make([]byte, 1)
+	payload[0] = code
+	var pkg protocol.PKG = protocol.NewRequestMethod(protocol.CmdReplyCode, payload)
+
+	data, err := pkg.Encode()
+	if err != nil {
+		logger.Error(ctx, err.Error())
+		return err
+	}
+	_, err = c.conn.Write(data)
+	if err != nil {
+		logger.Error(ctx, fmt.Sprintf("send code replay %s", err.Error()))
+		return err
+	}
+	return nil
 }
 
-func (c *SConn) ReplayWithAuthCtx() {
-	// TODO(shawnlu): Implement it
+func (c *SConn) ReplayWithAuthCtx(ctx context.Context, authCtx string) error {
+	var pkg protocol.PKG = protocol.NewRequestMethod(protocol.CmdReplyAuthCtx, []byte(authCtx))
+
+	data, err := pkg.Encode()
+	if err != nil {
+		logger.Error(ctx, err.Error())
+		return err
+	}
+	_, err = c.conn.Write(data)
+	if err != nil {
+		logger.Error(ctx, fmt.Sprintf("send auth ctx replay %s", err.Error()))
+		return err
+	}
+	return nil
 }
 
 func (c *SConn) Serve(ctx context.Context) {
@@ -95,7 +122,7 @@ func (c *SConn) Serve(ctx context.Context) {
 		}
 
 		// Parse request method
-		var pkg protocol.PKG = protocol.NewRequestMethod()
+		var pkg protocol.PKG = protocol.NewRequestMethod(protocol.CmdNone, make([]byte, 0))
 		err := pkg.Parse(ctx, c.conn)
 		if err != nil {
 			logger.Error(ctx, err.Error())
