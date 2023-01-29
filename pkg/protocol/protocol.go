@@ -72,7 +72,8 @@ func (req *RequestMethod) GetPayload() []byte {
 }
 
 func (req *RequestMethod) Encode() ([]byte, error) {
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	buf := new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
 	err := enc.Encode(req)

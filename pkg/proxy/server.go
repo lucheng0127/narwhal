@@ -27,13 +27,15 @@ type ProxyServer struct {
 func (s *ProxyServer) ServeConn(conn connection.Connection) {
 	defer func() {
 		if r := recover(); r != nil {
-			ctx := utils.NewTraceContext()
+			var tCtx utils.TraceCtx = utils.NewTraceID()
+			ctx := tCtx.NewTraceContext()
 			logger.Error(ctx, string(debug.Stack()))
 			conn.Close()
 		}
 	}()
 
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	go conn.Serve(ctx)
 
 	// Wait client send auth and bind cmd, if proxy connection,
@@ -82,7 +84,8 @@ func (s *ProxyServer) ServeConn(conn connection.Connection) {
 //	and send new connection to authed connection.ProxyConnCh.
 //	authed connection will do proxy with this new connection
 func (s *ProxyServer) Monitor() {
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	for {
 		authCtx := <-connection.GConnPool.Pool
 		proxyConn, ok := connection.GConnPool.PoolMap[authCtx]
@@ -105,7 +108,8 @@ func (s *ProxyServer) Serve(ln net.Listener) error {
 	defer ln.Close()
 
 	for {
-		ctx := utils.NewTraceContext()
+		var tCtx utils.TraceCtx = utils.NewTraceID()
+		ctx := tCtx.NewTraceContext()
 		conn, err := ln.Accept()
 		if err != nil {
 			logger.Error(ctx, err.Error())
@@ -119,7 +123,8 @@ func (s *ProxyServer) Serve(ln net.Listener) error {
 
 func (s *ProxyServer) Launch() error {
 	// Listen port and serve
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
 	if err != nil {
 		logger.Error(ctx, fmt.Sprintf("Listen port %d %s", s.port, err.Error()))

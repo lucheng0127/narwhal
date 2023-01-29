@@ -72,7 +72,8 @@ func (c *SConn) Notify() {
 
 func (c *SConn) Close() {
 	defer c.conn.Close()
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	c.ReplayWithCode(ctx, protocol.RepConnClose)
 }
 
@@ -155,12 +156,14 @@ func (c *SConn) forwarding(sConn, tConn net.Conn) {
 		if r := recover(); r != nil {
 			sConn.Close()
 			tConn.Close()
-			ctx := utils.NewTraceContext()
+			var tCtx utils.TraceCtx = utils.NewTraceID()
+			ctx := tCtx.NewTraceContext()
 			logger.Warn(ctx, fmt.Sprintf("Proxy %s %s end, because of %s", sConn.RemoteAddr().String(), tConn.RemoteAddr().String(), debug.Stack()))
 		}
 	}()
 
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	logger.Debug(ctx, fmt.Sprintf("Proxy %s %s\n", sConn.RemoteAddr().String(), tConn.RemoteAddr().String()))
 	go copyIO(sConn, tConn)
 	go copyIO(tConn, sConn)
@@ -172,7 +175,8 @@ func (c *SConn) Proxy() {
 	}
 
 	defer c.ln.Close()
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	logger.Info(ctx, fmt.Sprintf("Start to serve %s\n", c.ln.Addr().String()))
 
 	for {
