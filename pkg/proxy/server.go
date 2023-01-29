@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"net"
+	"os"
 	"runtime/debug"
 
 	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
@@ -16,12 +17,40 @@ type Server interface {
 	Launch() error
 	Serve(net.Listener) error
 	ServeConn(conn connection.Connection)
+	Stop()
 }
 
 type ProxyServer struct {
 	port       int // Service port
 	users      map[string]string
 	authedConn map[string]connection.Connection
+}
+
+type Option func(s *ProxyServer)
+
+func ListenPort(port int) Option {
+	return func(s *ProxyServer) {
+		s.port = port
+	}
+}
+
+func NewProxyServer(opts ...Option) *ProxyServer {
+	s := new(ProxyServer)
+	for _, o := range opts {
+		o(s)
+	}
+
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
+	if s.port == 0 {
+		logger.Error(ctx, "Port not configured")
+		return nil
+	}
+	return s
+}
+
+func (s *ProxyServer) Stop() {
+	os.Exit(0)
 }
 
 func (s *ProxyServer) ServeConn(conn connection.Connection) {

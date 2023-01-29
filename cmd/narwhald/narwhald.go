@@ -1,6 +1,5 @@
 package main
 
-/*
 import (
 	"context"
 	"fmt"
@@ -14,7 +13,7 @@ import (
 	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
 	"github.com/lucheng0127/narwhal/internal/pkg/utils"
 	"github.com/lucheng0127/narwhal/internal/pkg/version"
-	"github.com/lucheng0127/narwhal/pkg/server"
+	"github.com/lucheng0127/narwhal/pkg/proxy"
 	"github.com/sirupsen/logrus"
 )
 
@@ -52,7 +51,8 @@ func main() {
 		logger.SetLevel(logrus.InfoLevel)
 	}
 
-	ctx := utils.NewTraceContext()
+	var tCtx utils.TraceCtx = utils.NewTraceID()
+	ctx := tCtx.NewTraceContext()
 	// Parse config file
 	conf, err := config.ReadConfigFile(opts.ConfigFile, opts.ConfigType)
 	if err != nil {
@@ -61,11 +61,7 @@ func main() {
 	}
 
 	// Launch server
-	s := server.NewServer(server.ListenPort(conf.Port))
-	if s == nil {
-		logger.Error(ctx, "Create server failed")
-		os.Exit(1)
-	}
+	var s proxy.Server = proxy.NewProxyServer(proxy.ListenPort(conf.Port))
 	go s.Launch()
 	logger.Info(ctx, "Narwhal server started")
 
@@ -74,8 +70,7 @@ func main() {
 	stopServer(ctx, s)
 }
 
-func stopServer(ctx context.Context, s *server.Server) {
+func stopServer(ctx context.Context, s proxy.Server) {
 	logger.Info(ctx, "Stopping narwhal server")
 	s.Stop()
 }
-*/

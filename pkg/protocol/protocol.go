@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 
 	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
@@ -89,8 +90,10 @@ func (req *RequestMethod) Parse(ctx context.Context, conn net.Conn) error {
 	methodBuf := make([]byte, 1)
 	_, err := conn.Read(methodBuf)
 	if err != nil {
-		logger.Error(ctx, fmt.Sprintf("parse request method cmd %s", err.Error()))
-		return err
+		if err == io.EOF {
+			return nil
+		}
+		return fmt.Errorf("parse request method cmd %s", err.Error())
 	}
 
 	// Parse method payload
@@ -105,18 +108,15 @@ func (req *RequestMethod) Parse(ctx context.Context, conn net.Conn) error {
 	case CmdReplyCode:
 		payloadLen = 1
 	default:
-		logger.Error(ctx, "unsupport request method")
 		return errors.New("unsupport request method")
 	}
 
 	payloadBuf := make([]byte, payloadLen)
 	n, err := conn.Read(payloadBuf)
-	if err != nil {
-		logger.Error(ctx, fmt.Sprintf("parse request method payload %s", err.Error()))
+	if err != nil && err != io.EOF {
 		return err
 	}
 	if n != payloadLen {
-		logger.Error(ctx, "invalidate request method payload")
 		return errors.New("invalidate request method payload")
 	}
 
