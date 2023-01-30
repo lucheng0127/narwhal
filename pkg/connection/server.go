@@ -23,7 +23,7 @@ type SConn struct {
 	ProxyConn   bool
 }
 
-func NewServerConnection(conn net.Conn) *SConn {
+func NewServerConnection(conn net.Conn) Connection {
 	return &SConn{
 		conn:        conn,
 		BindPort:    -1,
@@ -72,8 +72,7 @@ func (c *SConn) Notify() {
 
 func (c *SConn) Close() {
 	defer c.conn.Close()
-	var tCtx utils.TraceCtx = utils.NewTraceID()
-	ctx := tCtx.NewTraceContext()
+	ctx := utils.NewTraceContext()
 	c.ReplayWithCode(ctx, protocol.RepConnClose)
 }
 
@@ -127,6 +126,8 @@ func (c *SConn) Serve(ctx context.Context) {
 		err := pkg.Parse(ctx, c.conn)
 		if err != nil {
 			logger.Error(ctx, err.Error())
+			c.conn.Close()
+			break
 		}
 
 		// Handle request method, after auth and bind, send true to channel ready
@@ -156,14 +157,12 @@ func (c *SConn) forwarding(sConn, tConn net.Conn) {
 		if r := recover(); r != nil {
 			sConn.Close()
 			tConn.Close()
-			var tCtx utils.TraceCtx = utils.NewTraceID()
-			ctx := tCtx.NewTraceContext()
+			ctx := utils.NewTraceContext()
 			logger.Warn(ctx, fmt.Sprintf("Proxy %s %s end, because of %s", sConn.RemoteAddr().String(), tConn.RemoteAddr().String(), debug.Stack()))
 		}
 	}()
 
-	var tCtx utils.TraceCtx = utils.NewTraceID()
-	ctx := tCtx.NewTraceContext()
+	ctx := utils.NewTraceContext()
 	logger.Debug(ctx, fmt.Sprintf("Proxy %s %s\n", sConn.RemoteAddr().String(), tConn.RemoteAddr().String()))
 	go copyIO(sConn, tConn)
 	go copyIO(tConn, sConn)
@@ -175,8 +174,7 @@ func (c *SConn) Proxy() {
 	}
 
 	defer c.ln.Close()
-	var tCtx utils.TraceCtx = utils.NewTraceID()
-	ctx := tCtx.NewTraceContext()
+	ctx := utils.NewTraceContext()
 	logger.Info(ctx, fmt.Sprintf("Start to serve %s\n", c.ln.Addr().String()))
 
 	for {

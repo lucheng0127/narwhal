@@ -1,6 +1,6 @@
 build_dir=build
 
-all: dir narwhald
+all: dir narwhald cover
 
 dir: dir_build dir_cover
 
@@ -13,7 +13,7 @@ dir_cover:
 cover: dir_cover test
 
 test:
-	go test -coverprofile cover/cover.out ./pkg/...
+	go test -gcflags=-l -coverprofile cover/cover.out ./pkg/...
 	go tool cover -html=./cover/cover.out -o cover/cover.html
 
 narwhald:
