@@ -1,14 +1,10 @@
 package proxy
 
-import (
-	"net"
-
-	"github.com/lucheng0127/narwhal/pkg/connection"
+const (
+	DefaultPort int = 8888
 )
 
 type Server interface {
 	Launch() error
-	Serve(net.Listener) error
-	ServeConn(conn connection.Connection)
 	Stop()
 }

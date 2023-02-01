@@ -1,48 +1,93 @@
 package protocol
 
-import (
-	"context"
-	"net"
-)
-
-// Request:
-// +---+-------+
-// |cmd|payload|
-// +---+-------+
-//
-// auth: 0x8e
-// bind: 0x8d
-// new connection: 0x8b
-// close: 0x87
-// reply auth ctx: 0x89
-// reply code: 0x88
-//
-// auth payload length 16 byte
-// bind payload length 2 byte
-// new connection payload length 16 byte, key of authedConn
-// reply autx ctx payload length 16 byte
-// reply code payload length 1 byte
+import "net"
 
 const (
-	// cmds
-	CmdNone         = byte(0xcf)
-	CmdAuth         = byte(0x8e)
-	CmdBind         = byte(0x8d)
-	CmdNewConn      = byte(0x8b)
-	CmdClose        = byte(0x87)
-	CmdReplyAuthCtx = byte(0x89)
-	CmdReplyCode    = byte(0x88)
+	// Request code
+	ReqNone  byte = byte(0xa0)
+	ReqAuth  byte = byte(0xa1)
+	ReqBind  byte = byte(0xa2)
+	ReqPConn byte = byte(0xa3) // When proxy port accept a new connection send ReqPConn to client with connection.AuthCtx
 
-	// response code
-	RepInvalidCmd  = byte(0xff)
-	RepAuthFailed  = byte(0xfe)
-	RepConnClose   = byte(0xfd)
-	RepInvalidPort = byte(0xfb)
+	// Reply code
+	RepNone  byte = byte(0x50)
+	RepAuth  byte = byte(0x51)
+	RepBind  byte = byte(0x52)
+	RepPConn byte = byte(0x53) // Client establish a new connection with server send RepPConn to server with connection.AuthCtx
+
+	// Result code
+	RetSucceed byte = byte(0xf0)
+	RetFailed  byte = byte(0xf1)
 )
 
+// PKG is used to implement package for negotiation
+//
+// +-----+----+-------+
+// |PCode|PLen|Payload|
+// +-----+----+-------+
+//
+// PCode: request/reply method code
+// PLen: length of payload
+// Payload: payload of data
 type PKG interface {
-	Parse(ctx context.Context, conn net.Conn) error
-	Encode() ([]byte, error)
-	GetCmd() byte
-	GetPayload() []byte
+	Encode() error
+	Decode() error
+	SendToConn(conn net.Conn) error
+	GetPCode() byte
+	GetPayload() PL
+}
+
+type PL interface {
+	String() string
+	Int() int
+}
+
+type PHeader struct {
+	PCode byte
+	Plen  uint8
+}
+
+type PPayload struct {
+	Data []byte
+}
+
+func (pp *PPayload) String() string {
+	return ""
+}
+
+func (pp *PPayload) Int() int {
+	return 0
+}
+
+type Package struct {
+	Header  *PHeader
+	Payload *PPayload
+}
+
+func ReadFromConn(conn net.Conn) (PKG, error) {
+	// TODO
+	pkt := new(Package)
+	pkt.Header = new(PHeader)
+	pkt.Payload = new(PPayload)
+	return pkt, nil
+}
+
+func (p *Package) SendToConn(conn net.Conn) error {
+	return nil
+}
+
+func (p *Package) Encode() error {
+	return nil
+}
+
+func (p *Package) Decode() error {
+	return nil
+}
+
+func (p *Package) GetPCode() byte {
+	return p.Header.PCode
+}
+
+func (p *Package) GetPayload() PL {
+	return p.Payload
 }
