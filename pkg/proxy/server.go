@@ -99,6 +99,7 @@ func (s *ProxyServer) auth(conn connection.Connection) (string, error) {
 }
 
 func (s *ProxyServer) bind(conn connection.Connection) (int, error) {
+	// TODO
 	return 8888, nil
 }
 
@@ -113,6 +114,7 @@ func (s *ProxyServer) serveConn(conn connection.Connection) {
 
 			delete(s.authedConn, cArrs.AuthCtx)
 			conn.Close()
+			return
 		}
 	}()
 

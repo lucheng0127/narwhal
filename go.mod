@@ -5,6 +5,7 @@ go 1.18
 replace github.com/lucheng0127/narwhal => ./
 
 require (
+	bou.ke/monkey v1.0.2
 	github.com/golang/mock v1.4.4
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/satori/go.uuid v1.2.0
@@ -13,7 +14,6 @@ require (
 )
 
 require (
-	bou.ke/monkey v1.0.2 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/magiconair/properties v1.8.6 // indirect

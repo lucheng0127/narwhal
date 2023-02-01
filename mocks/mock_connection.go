@@ -5,11 +5,11 @@
 package mocks
 
 import (
-	context "context"
+	net "net"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-	protocol "github.com/lucheng0127/narwhal/pkg/protocol"
+	connection "github.com/lucheng0127/narwhal/pkg/connection"
 )
 
 // MockConnection is a mock of Connection interface.
@@ -35,28 +35,18 @@ func (m *MockConnection) EXPECT() *MockConnectionMockRecorder {
 	return m.recorder
 }
 
-// Auth mocks base method.
-func (m *MockConnection) Auth(ctx context.Context, pkg protocol.PKG) {
+// BindAndProxy mocks base method.
+func (m *MockConnection) BindAndProxy(bPort int) error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Auth", ctx, pkg)
+	ret := m.ctrl.Call(m, "BindAndProxy", bPort)
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
-// Auth indicates an expected call of Auth.
-func (mr *MockConnectionMockRecorder) Auth(ctx, pkg interface{}) *gomock.Call {
+// BindAndProxy indicates an expected call of BindAndProxy.
+func (mr *MockConnectionMockRecorder) BindAndProxy(bPort interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Auth", reflect.TypeOf((*MockConnection)(nil).Auth), ctx, pkg)
-}
-
-// Bind mocks base method.
-func (m *MockConnection) Bind(ctx context.Context, pkg protocol.PKG) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Bind", ctx, pkg)
-}
-
-// Bind indicates an expected call of Bind.
-func (mr *MockConnectionMockRecorder) Bind(ctx, pkg interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockConnection)(nil).Bind), ctx, pkg)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BindAndProxy", reflect.TypeOf((*MockConnection)(nil).BindAndProxy), bPort)
 }
 
 // Close mocks base method.
@@ -71,120 +61,52 @@ func (mr *MockConnectionMockRecorder) Close() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockConnection)(nil).Close))
 }
 
-// GetBindPort mocks base method.
-func (m *MockConnection) GetBindPort() int {
+// GetArrs mocks base method.
+func (m *MockConnection) GetArrs() connection.Arrs {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetBindPort")
-	ret0, _ := ret[0].(int)
+	ret := m.ctrl.Call(m, "GetArrs")
+	ret0, _ := ret[0].(connection.Arrs)
 	return ret0
 }
 
-// GetBindPort indicates an expected call of GetBindPort.
-func (mr *MockConnectionMockRecorder) GetBindPort() *gomock.Call {
+// GetArrs indicates an expected call of GetArrs.
+func (mr *MockConnectionMockRecorder) GetArrs() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBindPort", reflect.TypeOf((*MockConnection)(nil).GetBindPort))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetArrs", reflect.TypeOf((*MockConnection)(nil).GetArrs))
 }
 
-// GetUID mocks base method.
-func (m *MockConnection) GetUID() string {
+// NewPConn mocks base method.
+func (m *MockConnection) NewPConn(pConn net.Conn) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetUID")
-	ret0, _ := ret[0].(string)
-	return ret0
+	m.ctrl.Call(m, "NewPConn", pConn)
 }
 
-// GetUID indicates an expected call of GetUID.
-func (mr *MockConnectionMockRecorder) GetUID() *gomock.Call {
+// NewPConn indicates an expected call of NewPConn.
+func (mr *MockConnectionMockRecorder) NewPConn(pConn interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUID", reflect.TypeOf((*MockConnection)(nil).GetUID))
-}
-
-// NewConn mocks base method.
-func (m *MockConnection) NewConn(ctx context.Context, pkg protocol.PKG) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "NewConn", ctx, pkg)
-}
-
-// NewConn indicates an expected call of NewConn.
-func (mr *MockConnectionMockRecorder) NewConn(ctx, pkg interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewConn", reflect.TypeOf((*MockConnection)(nil).NewConn), ctx, pkg)
-}
-
-// Proxy mocks base method.
-func (m *MockConnection) Proxy() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Proxy")
-}
-
-// Proxy indicates an expected call of Proxy.
-func (mr *MockConnectionMockRecorder) Proxy() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Proxy", reflect.TypeOf((*MockConnection)(nil).Proxy))
-}
-
-// ReplayWithAuthCtx mocks base method.
-func (m *MockConnection) ReplayWithAuthCtx(ctx context.Context, authCtx string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReplayWithAuthCtx", ctx, authCtx)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// ReplayWithAuthCtx indicates an expected call of ReplayWithAuthCtx.
-func (mr *MockConnectionMockRecorder) ReplayWithAuthCtx(ctx, authCtx interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReplayWithAuthCtx", reflect.TypeOf((*MockConnection)(nil).ReplayWithAuthCtx), ctx, authCtx)
-}
-
-// ReplayWithCode mocks base method.
-func (m *MockConnection) ReplayWithCode(ctx context.Context, code byte) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReplayWithCode", ctx, code)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// ReplayWithCode indicates an expected call of ReplayWithCode.
-func (mr *MockConnectionMockRecorder) ReplayWithCode(ctx, code interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReplayWithCode", reflect.TypeOf((*MockConnection)(nil).ReplayWithCode), ctx, code)
-}
-
-// Serve mocks base method.
-func (m *MockConnection) Serve(ctx context.Context) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Serve", ctx)
-}
-
-// Serve indicates an expected call of Serve.
-func (mr *MockConnectionMockRecorder) Serve(ctx interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Serve", reflect.TypeOf((*MockConnection)(nil).Serve), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewPConn", reflect.TypeOf((*MockConnection)(nil).NewPConn), pConn)
 }
 
 // SetAuthCtx mocks base method.
-func (m *MockConnection) SetAuthCtx(arg0 string) {
+func (m *MockConnection) SetAuthCtx(authCtx string) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetAuthCtx", arg0)
+	m.ctrl.Call(m, "SetAuthCtx", authCtx)
 }
 
 // SetAuthCtx indicates an expected call of SetAuthCtx.
-func (mr *MockConnectionMockRecorder) SetAuthCtx(arg0 interface{}) *gomock.Call {
+func (mr *MockConnectionMockRecorder) SetAuthCtx(authCtx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAuthCtx", reflect.TypeOf((*MockConnection)(nil).SetAuthCtx), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAuthCtx", reflect.TypeOf((*MockConnection)(nil).SetAuthCtx), authCtx)
 }
 
-// ShouldProxy mocks base method.
-func (m *MockConnection) ShouldProxy() bool {
+// SetToProxyConn mocks base method.
+func (m *MockConnection) SetToProxyConn() {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ShouldProxy")
-	ret0, _ := ret[0].(bool)
-	return ret0
+	m.ctrl.Call(m, "SetToProxyConn")
 }
 
-// ShouldProxy indicates an expected call of ShouldProxy.
-func (mr *MockConnectionMockRecorder) ShouldProxy() *gomock.Call {
+// SetToProxyConn indicates an expected call of SetToProxyConn.
+func (mr *MockConnectionMockRecorder) SetToProxyConn() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShouldProxy", reflect.TypeOf((*MockConnection)(nil).ShouldProxy))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetToProxyConn", reflect.TypeOf((*MockConnection)(nil).SetToProxyConn))
 }
