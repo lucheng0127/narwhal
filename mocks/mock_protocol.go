@@ -50,11 +50,12 @@ func (mr *MockPKGMockRecorder) Decode() *gomock.Call {
 }
 
 // Encode mocks base method.
-func (m *MockPKG) Encode() error {
+func (m *MockPKG) Encode() ([]byte, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Encode")
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].([]byte)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // Encode indicates an expected call of Encode.

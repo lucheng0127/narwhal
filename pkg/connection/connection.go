@@ -1,8 +1,13 @@
 package connection
 
 import (
+	"fmt"
 	"io"
 	"net"
+	"runtime/debug"
+
+	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
+	"github.com/lucheng0127/narwhal/internal/pkg/utils"
 )
 
 // Connection is used to implement connection between narwhal server and client
@@ -29,4 +34,20 @@ func copyIO(srcConn, dstConn net.Conn) {
 	defer srcConn.Close()
 	defer dstConn.Close()
 	io.Copy(dstConn, srcConn)
+}
+
+func ioSwitch(pConn, tConn net.Conn) {
+	defer func() {
+		if r := recover(); r != nil {
+			pConn.Close()
+			tConn.Close()
+			ctx := utils.NewTraceContext()
+			logger.Warn(ctx, fmt.Sprintf("stop proxy %s %s\n%s", pConn.RemoteAddr().String(), tConn.RemoteAddr().String(), debug.Stack()))
+		}
+	}()
+
+	ctx := utils.NewTraceContext()
+	logger.Debug(ctx, fmt.Sprintf("proxy %s %s\n", pConn.RemoteAddr().String(), tConn.RemoteAddr().String()))
+	go copyIO(pConn, tConn)
+	go copyIO(tConn, pConn)
 }

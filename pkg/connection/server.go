@@ -3,6 +3,10 @@ package connection
 import (
 	"fmt"
 	"net"
+
+	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
+	"github.com/lucheng0127/narwhal/internal/pkg/utils"
+	"github.com/lucheng0127/narwhal/pkg/protocol"
 )
 
 type Arrs struct {
@@ -49,54 +53,45 @@ func (c *SConn) GetArrs() Arrs {
 	return c.arrs
 }
 
+func (c *SConn) notify() error {
+	// Notify client new connection establish with authCtx through c.Conn
+	pkt := protocol.NewPkt(protocol.RepNotify, []byte(c.arrs.AuthCtx))
+	pktData, err := pkt.Encode()
+	if err != nil {
+		return err
+	}
+
+	n, err := c.arrs.Conn.Write(pktData)
+	if err != nil {
+		return err
+	}
+	ctx := utils.NewTraceContext()
+	logger.Debug(ctx, fmt.Sprintf("send [%d] bytes notify data to connection [%s]", n, c.arrs.Conn.RemoteAddr().String()))
+	return nil
+}
+
 func (c *SConn) BindAndProxy(bPort int) error {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", c.arrs.BindPort))
+	ctx := utils.NewTraceContext()
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", bPort))
 	if err != nil {
 		return err
 	}
 	c.arrs.ln = ln
 
-	// TODO
-	return nil
-}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			logger.Error(ctx, fmt.Sprintf("connection establish with port [%d] %s", bPort, err.Error()))
+		}
 
-//
-//func (c *SConn) forwarding(sConn, tConn net.Conn) {
-//	defer func() {
-//		if r := recover(); r != nil {
-//			sConn.Close()
-//			tConn.Close()
-//			ctx := utils.NewTraceContext()
-//			logger.Warn(ctx, fmt.Sprintf("Proxy %s %s end, because of %s", sConn.RemoteAddr().String(), tConn.RemoteAddr().String(), debug.Stack()))
-//		}
-//	}()
-//
-//	ctx := utils.NewTraceContext()
-//	logger.Debug(ctx, fmt.Sprintf("Proxy %s %s\n", sConn.RemoteAddr().String(), tConn.RemoteAddr().String()))
-//	go copyIO(sConn, tConn)
-//	go copyIO(tConn, sConn)
-//}
-//
-//func (c *SConn) Proxy() {
-//	if c.ln == nil {
-//		return
-//	}
-//
-//	defer c.ln.Close()
-//	ctx := utils.NewTraceContext()
-//	logger.Info(ctx, fmt.Sprintf("Start to serve %s\n", c.ln.Addr().String()))
-//
-//	for {
-//		conn, err := c.ln.Accept()
-//		if err != nil {
-//			logger.Error(ctx, err.Error())
-//			continue
-//		}
-//
-//		// Tell client this a new connection establised, client will
-//		c.Notify()
-//
-//		tConn := <-c.ProxyConnCh
-//		go c.forwarding(conn, tConn)
-//	}
-//}
+		err = c.notify()
+		if err != nil {
+			logger.Error(ctx, fmt.Sprintf("send notify to connection [%s] %s", c.arrs.Conn.RemoteAddr().String(), err.Error()))
+			conn.Close()
+			continue
+		}
+
+		tConn := <-c.arrs.ProxyConnCh
+		go ioSwitch(conn, tConn)
+	}
+}
