@@ -33,6 +33,10 @@ func (c *SConn) SetAuthCtx(authCtx string) {
 	c.arrs.AuthCtx = authCtx
 }
 
+func (c *SConn) SetUID(uid string) {
+	c.arrs.UID = uid
+}
+
 func (c *SConn) NewPConn(conn net.Conn) {
 	c.arrs.ProxyConnCh <- conn
 }

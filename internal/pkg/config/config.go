@@ -3,7 +3,8 @@ package config
 import "github.com/spf13/viper"
 
 type ServerConfigSet struct {
-	Port int `mapstructure:"port"`
+	Port  int               `mapstructure:"port"`
+	Users map[string]string `mapstructure:"users"`
 }
 
 func ReadConfigFile(path, format string) (*ServerConfigSet, error) {
@@ -15,6 +16,7 @@ func ReadConfigFile(path, format string) (*ServerConfigSet, error) {
 		return nil, err
 	}
 	return &ServerConfigSet{
-		Port: v.GetInt("port"),
+		Port:  v.GetInt("port"),
+		Users: v.GetStringMapString("users"),
 	}, nil
 }

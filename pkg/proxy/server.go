@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net"
 	"runtime/debug"
+	"strconv"
+	"strings"
 
 	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
 	"github.com/lucheng0127/narwhal/internal/pkg/utils"
@@ -42,9 +44,52 @@ func NewProxyServer(opts ...Option) Server {
 //	1000-1010 - port from 1000 to 1020 can be bind
 //
 // port contained by user.Ports
-func (s *ProxyServer) availabledPort(port int) bool {
-	// TODO(shawnlu): Implement it
-	return true
+func (s *ProxyServer) availabledPort(uid string, port int) bool {
+	pr, ok := s.users[uid]
+	if !ok {
+		return false
+	}
+
+	if strings.Contains(pr, "-") {
+		prArray := strings.Split(pr, "-")
+		if len(prArray) != 2 {
+			return false
+		}
+
+		prL, err := strconv.Atoi(prArray[0])
+		if err != nil {
+			return false
+		}
+		prR, err := strconv.Atoi(prArray[1])
+		if err != nil {
+			return false
+		}
+
+		if prL <= port && port <= prR {
+			return true
+		}
+		return false
+	}
+
+	if strings.Contains(pr, ",") {
+		prArray := strings.Split(pr, ",")
+		for _, prIStr := range prArray {
+			prI, err := strconv.Atoi(prIStr)
+			if err == nil && prI == port {
+				return true
+			}
+		}
+		return false
+	}
+
+	prI, err := strconv.Atoi(pr)
+	if err == nil {
+		if prI == 0 || prI == port {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *ProxyServer) getUserByUid(uid string) string {
@@ -65,11 +110,10 @@ func (s *ProxyServer) getAuthedConn(authCtx string) connection.Connection {
 
 func (s *ProxyServer) auth(conn connection.Connection) (string, error) {
 	// Parse pkt
-	ctx := utils.NewTraceContext()
 	cArrs := conn.GetArrs()
 	pkt, err := protocol.ReadFromConn(cArrs.Conn)
 	if err != nil {
-		return "", fmt.Errorf("auth connection %s", err.Error())
+		return "", fmt.Errorf("parse auth request %s", err.Error())
 	}
 
 	// Switch req code
@@ -79,28 +123,48 @@ func (s *ProxyServer) auth(conn connection.Connection) (string, error) {
 		if len(s.getUserByUid(uid)) == 0 {
 			return "", fmt.Errorf("no such user [%s]", uid)
 		}
+		conn.SetUID(uid)
 
 		// Generate auth ctx
 		authCtx := uuid.NewV4().String()
+		conn.SetAuthCtx(authCtx)
 		return authCtx, nil
 	case protocol.RepPConn:
 		authCtx := pkt.GetPayload().String()
 		conn := s.getAuthedConn(authCtx)
 
-		if conn != nil {
-			logger.Error(ctx, "connection with auth ctx [%s] not exist, maybe staled")
-			return "", nil
+		if conn == nil {
+			return "", fmt.Errorf("connection with auth ctx [%s] not exist, maybe staled", authCtx)
 		}
 		// Set connection NewPConn to true
 		conn.SetToProxyConn()
 		return "", nil
+	default:
+		return "", fmt.Errorf("invalidate auth request format")
 	}
-	return "", nil
 }
 
 func (s *ProxyServer) bind(conn connection.Connection) (int, error) {
-	// TODO
-	return 8888, nil
+	cArrs := conn.GetArrs()
+	pkt, err := protocol.ReadFromConn(cArrs.Conn)
+	if err != nil {
+		return -1, fmt.Errorf("parse bind request %s", err.Error())
+	}
+
+	switch pkt.GetPCode() {
+	case protocol.RepBind:
+		bPort := pkt.GetPayload().Int()
+		if bPort == -1 {
+			return -1, fmt.Errorf("invalidate bind request, binding port not set")
+		}
+
+		if !s.availabledPort(conn.GetArrs().UID, bPort) {
+			return -1, fmt.Errorf("not permitted binding port [%d]", bPort)
+		}
+		return bPort, nil
+	default:
+		return -1, fmt.Errorf("invalidate binding request format")
+	}
 }
 
 func (s *ProxyServer) serveConn(conn connection.Connection) {
@@ -118,9 +182,11 @@ func (s *ProxyServer) serveConn(conn connection.Connection) {
 		}
 	}()
 
+	ctx := utils.NewTraceContext()
 	// Auth
 	authCtx, err := s.auth(conn)
 	if err != nil {
+		logger.Error(ctx, err.Error())
 		panic(err)
 	}
 
@@ -137,10 +203,12 @@ func (s *ProxyServer) serveConn(conn connection.Connection) {
 	// For negotation connection bind then proxy
 	bPort, err := s.bind(conn)
 	if err != nil {
+		logger.Error(ctx, err.Error())
 		panic(err)
 	}
 	err = conn.BindAndProxy(bPort)
 	if err != nil {
+		logger.Error(ctx, err.Error())
 		panic(err)
 	}
 }

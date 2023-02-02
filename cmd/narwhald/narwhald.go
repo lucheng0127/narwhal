@@ -60,7 +60,9 @@ func main() {
 	}
 
 	// Launch server
-	var s proxy.Server = proxy.NewProxyServer(proxy.ListenPort(conf.Port))
+	var s proxy.Server = proxy.NewProxyServer(
+		proxy.ListenPort(conf.Port),
+		proxy.Users(conf.Users))
 	go s.Launch()
 	logger.Info(ctx, "Narwhal server started")
 

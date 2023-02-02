@@ -110,3 +110,15 @@ func (mr *MockConnectionMockRecorder) SetToProxyConn() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetToProxyConn", reflect.TypeOf((*MockConnection)(nil).SetToProxyConn))
 }
+
+// SetUID mocks base method.
+func (m *MockConnection) SetUID(uid string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetUID", uid)
+}
+
+// SetUID indicates an expected call of SetUID.
+func (mr *MockConnectionMockRecorder) SetUID(uid interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetUID", reflect.TypeOf((*MockConnection)(nil).SetUID), uid)
+}

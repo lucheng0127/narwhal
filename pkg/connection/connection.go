@@ -20,6 +20,7 @@ type Connection interface {
 	BindAndProxy(bPort int) error
 	NewPConn(pConn net.Conn)
 	SetAuthCtx(authCtx string)
+	SetUID(uid string)
 	SetToProxyConn()
 	GetArrs() Arrs
 }

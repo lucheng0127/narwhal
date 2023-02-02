@@ -56,7 +56,7 @@ func (pp *PPayload) String() string {
 }
 
 func (pp *PPayload) Int() int {
-	return 0
+	return -1
 }
 
 type Package struct {

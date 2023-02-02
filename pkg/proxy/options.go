@@ -7,3 +7,9 @@ func ListenPort(port int) Option {
 		s.port = port
 	}
 }
+
+func Users(users map[string]string) Option {
+	return func(s *ProxyServer) {
+		s.users = users
+	}
+}
