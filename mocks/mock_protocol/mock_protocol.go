@@ -35,20 +35,6 @@ func (m *MockPKG) EXPECT() *MockPKGMockRecorder {
 	return m.recorder
 }
 
-// Decode mocks base method.
-func (m *MockPKG) Decode() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Decode")
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Decode indicates an expected call of Decode.
-func (mr *MockPKGMockRecorder) Decode() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Decode", reflect.TypeOf((*MockPKG)(nil).Decode))
-}
-
 // Encode mocks base method.
 func (m *MockPKG) Encode() ([]byte, error) {
 	m.ctrl.T.Helper()

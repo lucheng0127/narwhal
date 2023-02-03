@@ -1,6 +1,15 @@
 package protocol
 
-import "net"
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+
+	logger "github.com/lucheng0127/narwhal/internal/pkg/log"
+	"github.com/lucheng0127/narwhal/internal/pkg/utils"
+)
 
 const (
 	// Request code
@@ -33,7 +42,6 @@ const (
 // Payload: payload of data
 type PKG interface {
 	Encode() ([]byte, error)
-	Decode() error
 	SendToConn(conn net.Conn) error
 	GetPCode() byte
 	GetPayload() PL
@@ -54,11 +62,17 @@ type PPayload struct {
 }
 
 func (pp *PPayload) String() string {
-	return ""
+	if len(pp.Data) == 0 {
+		return ""
+	}
+	return string(pp.Data)
 }
 
 func (pp *PPayload) Int() int {
-	return -1
+	if len(pp.Data) == 0 {
+		return -1
+	}
+	return int(binary.BigEndian.Uint16(pp.Data))
 }
 
 type Package struct {
@@ -68,30 +82,12 @@ type Package struct {
 
 func NewPkt(code byte, payload []byte) PKG {
 	pkt := new(Package)
+	pkt.Header = new(PHeader)
+	pkt.Payload = new(PPayload)
 	pkt.Header.PCode = code
 	pkt.Header.Plen = uint8(len(payload))
 	pkt.Payload.Data = payload
 	return pkt
-}
-
-func ReadFromConn(conn net.Conn) (PKG, error) {
-	// TODO
-	pkt := new(Package)
-	pkt.Header = new(PHeader)
-	pkt.Payload = new(PPayload)
-	return pkt, nil
-}
-
-func (p *Package) SendToConn(conn net.Conn) error {
-	return nil
-}
-
-func (p *Package) Encode() ([]byte, error) {
-	return make([]byte, 0), nil
-}
-
-func (p *Package) Decode() error {
-	return nil
 }
 
 func (p *Package) GetPCode() byte {
@@ -100,4 +96,50 @@ func (p *Package) GetPCode() byte {
 
 func (p *Package) GetPayload() PL {
 	return p.Payload
+}
+
+func ReadFromConn(conn net.Conn) (PKG, error) {
+	pkt := new(Package)
+	pkt.Header = new(PHeader)
+	pkt.Payload = new(PPayload)
+
+	err := binary.Read(conn, binary.BigEndian, pkt.Header)
+	if err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, int(pkt.Header.Plen))
+	_, err = io.ReadFull(conn, buf)
+	if err != nil {
+		return nil, err
+	}
+	pkt.Payload.Data = buf[:]
+	return pkt, nil
+}
+
+func (p *Package) SendToConn(conn net.Conn) error {
+	pktBytes, err := p.Encode()
+	if err != nil {
+		return err
+	}
+
+	n, err := conn.Write(pktBytes)
+	if err != nil {
+		return err
+	}
+
+	ctx := utils.NewTraceContext()
+	logger.Debug(ctx, fmt.Sprintf("sent [%d] bytes to connection %s", n, conn.RemoteAddr().String()))
+	return nil
+}
+
+func (p *Package) Encode() ([]byte, error) {
+	var headBuf bytes.Buffer
+
+	err := binary.Write(&headBuf, binary.BigEndian, p.Header)
+	if err != nil {
+		return make([]byte, 0), nil
+	}
+
+	return append(headBuf.Bytes(), p.Payload.Data...), nil
 }
