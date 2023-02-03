@@ -13,7 +13,6 @@ type Arrs struct {
 	UID         string
 	AuthCtx     string
 	BindPort    int
-	Ready       chan bool    // After Receive
 	ln          net.Listener // Listener of bind port
 	Conn        net.Conn
 	ProxyConnCh chan net.Conn // Connection used to port forwarding

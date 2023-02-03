@@ -8,7 +8,8 @@ import (
 
 	"bou.ke/monkey"
 	"github.com/golang/mock/gomock"
-	"github.com/lucheng0127/narwhal/mocks"
+	"github.com/lucheng0127/narwhal/mocks/mock_connection"
+	"github.com/lucheng0127/narwhal/mocks/mock_protocol"
 	"github.com/lucheng0127/narwhal/pkg/connection"
 	"github.com/lucheng0127/narwhal/pkg/protocol"
 	uuid "github.com/satori/go.uuid"
@@ -300,7 +301,7 @@ func TestProxyServer_getUserByUid(t *testing.T) {
 func TestProxyServer_getAuthedConn(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
-	mockConn := mocks.NewMockConnection(mockCtrl)
+	mockConn := mock_connection.NewMockConnection(mockCtrl)
 
 	type fields struct {
 		port       int
@@ -347,13 +348,13 @@ func TestProxyServer_auth(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
-	mockConn := mocks.NewMockConnection(mockCtrl)
+	mockConn := mock_connection.NewMockConnection(mockCtrl)
 	mockConn.EXPECT().GetArrs().AnyTimes()
 	mockConn.EXPECT().SetAuthCtx(gomock.Any()).AnyTimes()
 	mockConn.EXPECT().SetUID(gomock.Any()).AnyTimes()
 
-	mockPkt := mocks.NewMockPKG(mockCtrl)
-	mockPayload := mocks.NewMockPL(mockCtrl)
+	mockPkt := mock_protocol.NewMockPKG(mockCtrl)
+	mockPayload := mock_protocol.NewMockPL(mockCtrl)
 	mockUuid := uuid.NewV4()
 
 	type fields struct {
@@ -538,10 +539,10 @@ func TestProxyServer_bind(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
-	mockConn := mocks.NewMockConnection(mockCtrl)
+	mockConn := mock_connection.NewMockConnection(mockCtrl)
 	mockConn.EXPECT().GetArrs().Return(connection.Arrs{UID: "user"}).AnyTimes()
-	mockPkt := mocks.NewMockPKG(mockCtrl)
-	mockPayload := mocks.NewMockPL(mockCtrl)
+	mockPkt := mock_protocol.NewMockPKG(mockCtrl)
+	mockPayload := mock_protocol.NewMockPL(mockCtrl)
 
 	type fields struct {
 		port       int
