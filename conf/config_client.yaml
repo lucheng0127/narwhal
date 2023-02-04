@@ -1,0 +1,5 @@
+mode: client
+uuid: 9a5d6f6b-ee07-4397-a40f-a2c423772fd0
+rPort: 2222
+lPort: 22
+host: 127.0.0.1:8888

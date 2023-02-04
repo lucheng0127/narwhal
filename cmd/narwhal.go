@@ -60,9 +60,20 @@ func main() {
 	}
 
 	// Launch server
-	var s proxy.Server = proxy.NewProxyServer(
-		proxy.ListenPort(conf.(*config.ServerConfigSet).Port),
-		proxy.Users(conf.(*config.ServerConfigSet).Users))
+	var s proxy.Server
+	switch confSet := conf.(type) {
+	case *config.ClientConfigSet:
+		s = proxy.NewClientServer(
+			proxy.Host(confSet.Host),
+			proxy.RemotePort(conf.(*config.ClientConfigSet).RemotePort),
+			proxy.LocalPort(conf.(*config.ClientConfigSet).LocalPort),
+			proxy.Uid(conf.(*config.ClientConfigSet).Uid),
+		)
+	case *config.ServerConfigSet:
+		s = proxy.NewProxyServer(
+			proxy.ListenPort(conf.(*config.ServerConfigSet).Port),
+			proxy.Users(conf.(*config.ServerConfigSet).Users))
+	}
 
 	go func() {
 		err := s.Launch()
@@ -70,7 +81,7 @@ func main() {
 			panic(err)
 		}
 	}()
-	logger.Info(ctx, "Narwhal server started")
+	logger.Info(ctx, "Narwhal started")
 
 	// Exist with signal
 	<-sigCh
@@ -78,6 +89,6 @@ func main() {
 }
 
 func stopServer(ctx context.Context, s proxy.Server) {
-	logger.Info(ctx, "Stopping narwhal server")
+	logger.Info(ctx, "Stopping narwhal")
 	s.Stop()
 }

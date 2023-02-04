@@ -1,6 +1,6 @@
 build_dir=build
 
-all: dir narwhald narwhal cover
+all: dir narwhal cover
 
 dir: dir_build dir_cover
 
@@ -16,11 +16,8 @@ test:
 	go test -gcflags=-l -coverprofile cover/cover.out ./pkg/...
 	go tool cover -html=./cover/cover.out -o cover/cover.html
 
-narwhald:
-	go build -o ${build_dir}/narwhald cmd/narwhald/narwhald.go
-
 narwhal:
-	go build -o ${build_dir}/narwhal cmd/narwhal/narwhal.go
+	go build -o ${build_dir}/narwhal cmd/narwhal.go
 
 clean:
 	rm -rf ${build_dir}/*
