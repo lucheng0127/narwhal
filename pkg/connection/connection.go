@@ -10,6 +10,23 @@ import (
 	"github.com/lucheng0127/narwhal/internal/pkg/utils"
 )
 
+type Arrs struct {
+	UID         string
+	AuthCtx     string
+	BindPort    int
+	ln          net.Listener // Listener of bind port
+	Conn        net.Conn
+	ProxyConnCh chan net.Conn // Connection used to port forwarding
+	ProxyConn   bool
+}
+
+type Client interface {
+	Auth(uid string) error
+	Bind(rPort uint16) error
+	MonitorAndProxy(lPort uint16) error
+	Close()
+}
+
 // Connection is used to implement connection between narwhal server and client
 //
 // Serve: parse request method from tcp connection

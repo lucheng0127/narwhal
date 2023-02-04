@@ -1,6 +1,6 @@
 build_dir=build
 
-all: dir narwhald cover
+all: dir narwhald narwhal cover
 
 dir: dir_build dir_cover
 

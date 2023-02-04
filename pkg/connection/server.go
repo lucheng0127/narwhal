@@ -9,15 +9,6 @@ import (
 	"github.com/lucheng0127/narwhal/pkg/protocol"
 )
 
-type Arrs struct {
-	UID         string
-	AuthCtx     string
-	BindPort    int
-	ln          net.Listener // Listener of bind port
-	Conn        net.Conn
-	ProxyConnCh chan net.Conn // Connection used to port forwarding
-	ProxyConn   bool
-}
 type SConn struct {
 	arrs Arrs
 }

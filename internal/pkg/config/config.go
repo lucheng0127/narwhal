@@ -7,7 +7,16 @@ type ServerConfigSet struct {
 	Users map[string]string `mapstructure:"users"`
 }
 
-func ReadConfigFile(path, format string) (*ServerConfigSet, error) {
+type ClientConfigSet struct {
+	Uid        string
+	RemotePort uint16
+	LocalPort  uint16
+	Host       string
+}
+
+type ConfigSet interface{}
+
+func ReadConfigFile(path, format string) (ConfigSet, error) {
 	v := viper.New()
 	v.SetConfigFile(path)
 	v.SetConfigType(format)
@@ -15,8 +24,19 @@ func ReadConfigFile(path, format string) (*ServerConfigSet, error) {
 	if err := v.ReadInConfig(); err != nil {
 		return nil, err
 	}
-	return &ServerConfigSet{
-		Port:  v.GetInt("port"),
-		Users: v.GetStringMapString("users"),
-	}, nil
+
+	switch v.GetString("mode") {
+	case "client":
+		return &ClientConfigSet{
+			Uid:        v.GetString("uuid"),
+			RemotePort: v.GetUint16("rPort"),
+			LocalPort:  v.GetUint16("lPort"),
+			Host:       v.GetString("host"),
+		}, nil
+	default:
+		return &ServerConfigSet{
+			Port:  v.GetInt("port"),
+			Users: v.GetStringMapString("users"),
+		}, nil
+	}
 }

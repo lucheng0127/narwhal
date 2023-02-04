@@ -128,6 +128,8 @@ func (s *ProxyServer) auth(conn connection.Connection) (string, error) {
 		// Generate auth ctx
 		authCtx := uuid.NewV4().String()
 		conn.SetAuthCtx(authCtx)
+
+		// TODO(Reply)
 		return authCtx, nil
 	case protocol.RepPConn:
 		authCtx := pkt.GetPayload().String()
@@ -138,6 +140,8 @@ func (s *ProxyServer) auth(conn connection.Connection) (string, error) {
 		}
 		// Set connection NewPConn to true
 		conn.SetToProxyConn()
+
+		// TODO(Reply)
 		return "", nil
 	default:
 		return "", fmt.Errorf("invalidate auth request format")
@@ -153,6 +157,7 @@ func (s *ProxyServer) bind(conn connection.Connection) (int, error) {
 
 	switch pkt.GetPCode() {
 	case protocol.RepBind:
+		// TODO(Reply)
 		bPort := pkt.GetPayload().Int()
 		if bPort == -1 {
 			return -1, fmt.Errorf("invalidate bind request, binding port not set")
