@@ -117,10 +117,14 @@ func (s *ProxyServer) auth(conn connection.Connection) (string, error) {
 	}
 
 	// Switch req code
+	rPayload := make([]byte, 1)
 	switch pkt.GetPCode() {
-	case protocol.RepAuth:
+	case protocol.ReqAuth:
 		uid := pkt.GetPayload().String()
 		if len(s.getUserByUid(uid)) == 0 {
+			rPayload[0] = protocol.RetFailed
+			rPkt := protocol.NewPkt(protocol.RepAuth, rPayload)
+			rPkt.SendToConn(cArrs.Conn)
 			return "", fmt.Errorf("no such user [%s]", uid)
 		}
 		conn.SetUID(uid)
@@ -129,21 +133,33 @@ func (s *ProxyServer) auth(conn connection.Connection) (string, error) {
 		authCtx := uuid.NewV4().String()
 		conn.SetAuthCtx(authCtx)
 
-		// TODO(Reply)
+		// Reply and return
+		rPayload[0] = protocol.RetSucceed
+		rPkt := protocol.NewPkt(protocol.RepAuth, rPayload)
+		rPkt.SendToConn(cArrs.Conn)
 		return authCtx, nil
-	case protocol.RepPConn:
+	case protocol.ReqPConn:
 		authCtx := pkt.GetPayload().String()
 		conn := s.getAuthedConn(authCtx)
 
 		if conn == nil {
+			rPayload[0] = protocol.RetFailed
+			rPkt := protocol.NewPkt(protocol.RepPConn, rPayload)
+			rPkt.SendToConn(cArrs.Conn)
 			return "", fmt.Errorf("connection with auth ctx [%s] not exist, maybe staled", authCtx)
 		}
 		// Set connection NewPConn to true
 		conn.SetToProxyConn()
 
-		// TODO(Reply)
+		// Reply and return
+		rPayload[0] = protocol.RetSucceed
+		rPkt := protocol.NewPkt(protocol.RepPConn, rPayload)
+		rPkt.SendToConn(cArrs.Conn)
 		return "", nil
 	default:
+		rPayload[0] = protocol.RetFailed
+		rPkt := protocol.NewPkt(protocol.RepNone, rPayload)
+		rPkt.SendToConn(cArrs.Conn)
 		return "", fmt.Errorf("invalidate auth request format")
 	}
 }
@@ -155,19 +171,32 @@ func (s *ProxyServer) bind(conn connection.Connection) (int, error) {
 		return -1, fmt.Errorf("parse bind request %s", err.Error())
 	}
 
+	rPayload := make([]byte, 1)
 	switch pkt.GetPCode() {
-	case protocol.RepBind:
-		// TODO(Reply)
+	case protocol.ReqBind:
 		bPort := pkt.GetPayload().Int()
 		if bPort == -1 {
+			rPayload[0] = protocol.RetFailed
+			rPkt := protocol.NewPkt(protocol.RepBind, rPayload)
+			rPkt.SendToConn(cArrs.Conn)
 			return -1, fmt.Errorf("invalidate bind request, binding port not set")
 		}
 
 		if !s.availabledPort(conn.GetArrs().UID, bPort) {
+			rPayload[0] = protocol.RetFailed
+			rPkt := protocol.NewPkt(protocol.RepBind, rPayload)
+			rPkt.SendToConn(cArrs.Conn)
 			return -1, fmt.Errorf("not permitted binding port [%d]", bPort)
 		}
+
+		rPayload[0] = protocol.RetSucceed
+		rPkt := protocol.NewPkt(protocol.RepBind, rPayload)
+		rPkt.SendToConn(cArrs.Conn)
 		return bPort, nil
 	default:
+		rPayload[0] = protocol.RetFailed
+		rPkt := protocol.NewPkt(protocol.RepBind, rPayload)
+		rPkt.SendToConn(cArrs.Conn)
 		return -1, fmt.Errorf("invalidate binding request format")
 	}
 }

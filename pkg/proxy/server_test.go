@@ -9,6 +9,7 @@ import (
 	"bou.ke/monkey"
 	"github.com/golang/mock/gomock"
 	"github.com/lucheng0127/narwhal/mocks/mock_connection"
+	"github.com/lucheng0127/narwhal/mocks/mock_net"
 	"github.com/lucheng0127/narwhal/mocks/mock_protocol"
 	"github.com/lucheng0127/narwhal/pkg/connection"
 	"github.com/lucheng0127/narwhal/pkg/protocol"
@@ -344,12 +345,19 @@ func TestProxyServer_getAuthedConn(t *testing.T) {
 	}
 }
 
+// TODO(shawnlu): mock reply pkt for call SendToConn
 func TestProxyServer_auth(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
+	mockNetAddr := mock_net.NewMockAddr(mockCtrl)
+	mockNetConn := mock_net.NewMockConn(mockCtrl)
+	mockNetConn.EXPECT().Write(gomock.Any()).AnyTimes()
+	mockNetConn.EXPECT().RemoteAddr().AnyTimes().Return(mockNetAddr)
+	mockNetAddr.EXPECT().String().AnyTimes().Return("127.0.0.1:51111")
+	mockArrs := connection.Arrs{Conn: mockNetConn}
 	mockConn := mock_connection.NewMockConnection(mockCtrl)
-	mockConn.EXPECT().GetArrs().AnyTimes()
+	mockConn.EXPECT().GetArrs().AnyTimes().Return(mockArrs)
 	mockConn.EXPECT().SetAuthCtx(gomock.Any()).AnyTimes()
 	mockConn.EXPECT().SetUID(gomock.Any()).AnyTimes()
 
@@ -448,7 +456,7 @@ func TestProxyServer_auth(t *testing.T) {
 					},
 				)
 			} else if tt.name == "auth ok" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepAuth)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqAuth)
 				mockPkt.EXPECT().GetPayload().Return(mockPayload)
 				mockPayload.EXPECT().String().Return("user")
 
@@ -463,7 +471,7 @@ func TestProxyServer_auth(t *testing.T) {
 					return mockUuid
 				})
 			} else if tt.name == "auth not ok" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepAuth)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqAuth)
 				mockPkt.EXPECT().GetPayload().Return(mockPayload)
 				mockPayload.EXPECT().String().Return("user1")
 
@@ -478,7 +486,7 @@ func TestProxyServer_auth(t *testing.T) {
 					return mockUuid
 				})
 			} else if tt.name == "pconn ok" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepPConn)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqPConn)
 				mockPkt.EXPECT().GetPayload().Return(mockPayload)
 				mockPayload.EXPECT().String().Return(mockUuid.String())
 				mockConn.EXPECT().SetToProxyConn().Times(1)
@@ -494,7 +502,7 @@ func TestProxyServer_auth(t *testing.T) {
 					return mockUuid
 				})
 			} else if tt.name == "pconn not ok" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepPConn)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqPConn)
 				mockPkt.EXPECT().GetPayload().Return(mockPayload)
 				mockPayload.EXPECT().String().Return("123")
 
@@ -509,7 +517,7 @@ func TestProxyServer_auth(t *testing.T) {
 					return mockUuid
 				})
 			} else if tt.name == "invalidate request" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepNone)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqNone)
 
 				monkey.Patch(
 					protocol.ReadFromConn,
@@ -539,8 +547,13 @@ func TestProxyServer_bind(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
+	mockNetAddr := mock_net.NewMockAddr(mockCtrl)
+	mockNetConn := mock_net.NewMockConn(mockCtrl)
+	mockNetConn.EXPECT().Write(gomock.Any()).AnyTimes()
+	mockNetConn.EXPECT().RemoteAddr().AnyTimes().Return(mockNetAddr)
+	mockNetAddr.EXPECT().String().AnyTimes().Return("127.0.0.1:51111")
 	mockConn := mock_connection.NewMockConnection(mockCtrl)
-	mockConn.EXPECT().GetArrs().Return(connection.Arrs{UID: "user"}).AnyTimes()
+	mockConn.EXPECT().GetArrs().Return(connection.Arrs{UID: "user", Conn: mockNetConn}).AnyTimes()
 	mockPkt := mock_protocol.NewMockPKG(mockCtrl)
 	mockPayload := mock_protocol.NewMockPL(mockCtrl)
 
@@ -616,7 +629,7 @@ func TestProxyServer_bind(t *testing.T) {
 			}
 
 			if tt.name == "bind ok" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepBind)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqBind)
 				mockPkt.EXPECT().GetPayload().Return(mockPayload)
 				mockPayload.EXPECT().Int().Return(22)
 
@@ -627,7 +640,7 @@ func TestProxyServer_bind(t *testing.T) {
 					},
 				)
 			} else if tt.name == "invalidate bport" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepBind)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqBind)
 				mockPkt.EXPECT().GetPayload().Return(mockPayload)
 				mockPayload.EXPECT().Int().Return(-1)
 
@@ -638,7 +651,7 @@ func TestProxyServer_bind(t *testing.T) {
 					},
 				)
 			} else if tt.name == "not permitted bport" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepBind)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqBind)
 				mockPkt.EXPECT().GetPayload().Return(mockPayload)
 				mockPayload.EXPECT().Int().Return(8000)
 
@@ -649,7 +662,7 @@ func TestProxyServer_bind(t *testing.T) {
 					},
 				)
 			} else if tt.name == "invalidate req" {
-				mockPkt.EXPECT().GetPCode().Return(protocol.RepNone)
+				mockPkt.EXPECT().GetPCode().Return(protocol.ReqNone)
 
 				monkey.Patch(
 					protocol.ReadFromConn,
