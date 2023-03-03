@@ -17,7 +17,7 @@ import (
 type ProxyServer struct {
 	port       int // Service port
 	ln         net.Listener
-	users      map[string]string
+	users      map[string]string // TODO(shawnlu): Use sync map
 	authedConn map[string]connection.Connection
 }
 
