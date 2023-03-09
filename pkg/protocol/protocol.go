@@ -13,18 +13,18 @@ import (
 
 const (
 	// Request code
-	ReqNone   byte = byte(0xa0)
-	ReqAuth   byte = byte(0xa1)
-	ReqBind   byte = byte(0xa2)
-	ReqPConn  byte = byte(0xa3) // Client establish a new connection with server send RepPConn to server with connection.AuthCtx
-	ReqNotify byte = byte(0xa4) // A new connection establish to server binding port, server send RepNotify to client with connection.AuthCtx
+	ReqNone   byte = byte(0x00)
+	ReqAuth   byte = byte(0x01)
+	ReqBind   byte = byte(0x01 << 1)
+	ReqPConn  byte = byte(0x01 << 2) // Client establish a new connection with server send RepPConn to server with connection.AuthCtx
+	ReqNotify byte = byte(0x01 << 3) // A new connection establish to server binding port, server send RepNotify to client with connection.AuthCtx
 
 	// Reply code
-	RepNone   byte = byte(0x50)
-	RepAuth   byte = byte(0x51)
-	RepBind   byte = byte(0x52)
-	RepPConn  byte = byte(0x53)
-	RepNotify byte = byte(0x54)
+	RepNone   byte = byte(0x80)
+	RepAuth   byte = byte(0x01)
+	RepBind   byte = byte((0x01 << 1) | 0x80)
+	RepPConn  byte = byte((0x01 << 2) | 0x80)
+	RepNotify byte = byte((0x01 << 3) | 0x80)
 
 	// Result code
 	RetSucceed byte = byte(0xf0)
